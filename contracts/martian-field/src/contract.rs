@@ -11,7 +11,12 @@ use crate::helpers::unwrap_reply;
 use crate::{execute, execute_callbacks as callbacks, execute_replies as replies, queries};
 
 #[entry_point]
-pub fn instantiate(deps: DepsMut, _env: Env, _info: MessageInfo, msg: InstantiateMsg) -> StdResult<Response> {
+pub fn instantiate(
+    deps: DepsMut,
+    _env: Env,
+    _info: MessageInfo,
+    msg: InstantiateMsg,
+) -> StdResult<Response> {
     let config = msg.check(deps.api)?;
     config.validate()?;
     execute::init_storage(deps, config)
@@ -36,7 +41,12 @@ pub fn execute(deps: DepsMut, env: Env, info: MessageInfo, msg: ExecuteMsg) -> S
     }
 }
 
-fn execute_callback(deps: DepsMut, env: Env, info: MessageInfo, msg: CallbackMsg) -> StdResult<Response> {
+fn execute_callback(
+    deps: DepsMut,
+    env: Env,
+    info: MessageInfo,
+    msg: CallbackMsg,
+) -> StdResult<Response> {
     if info.sender != env.contract.address {
         return Err(StdError::generic_err("callbacks cannot be invoked externally"));
     }
@@ -116,6 +126,12 @@ pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> StdResult<Binary> {
         QueryMsg::Snapshot {
             user,
         } => to_binary(&queries::query_snapshot(deps, user)?),
+        QueryMsg::UserInfo {
+            address,
+        } => to_binary(&queries::query_user_info(deps, address)?),
+        QueryMsg::StrategyInfo {} => todo!(),
+        QueryMsg::Tvl {} => todo!(),
+        QueryMsg::Apr {} => todo!(),
     }
 }
 

@@ -1,6 +1,8 @@
 use std::str::FromStr;
 
-use cosmwasm_std::{to_binary, Addr, Api, CosmosMsg, Decimal, StdResult, Uint128, WasmMsg, StdError};
+use cosmwasm_std::{
+    to_binary, Addr, Api, CosmosMsg, Decimal, StdError, StdResult, Uint128, WasmMsg,
+};
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -105,7 +107,11 @@ impl ConfigUnchecked {
             oracle: self.oracle.check(api)?,
             treasury: api.addr_validate(&self.treasury)?,
             governance: api.addr_validate(&self.governance)?,
-            operators: self.operators.iter().map(|op| api.addr_validate(op)).collect::<StdResult<Vec<Addr>>>()?,
+            operators: self
+                .operators
+                .iter()
+                .map(|op| api.addr_validate(op))
+                .collect::<StdResult<Vec<Addr>>>()?,
             max_ltv: self.max_ltv,
             fee_rate: self.fee_rate,
             bonus_rate: self.bonus_rate,
@@ -118,23 +124,26 @@ impl Config {
         let min_max_ltv = Decimal::from_str(MIN_MAX_LTV)?;
         let max_max_ltv = Decimal::from_str(MAX_MAX_LTV)?;
         if self.max_ltv < min_max_ltv || self.max_ltv > max_max_ltv {
-            return Err(StdError::generic_err(
-                format!("invalid max ltv: {}; must be in [{}, {}]", self.max_ltv, MIN_MAX_LTV, MAX_MAX_LTV)
-            ));
+            return Err(StdError::generic_err(format!(
+                "invalid max ltv: {}; must be in [{}, {}]",
+                self.max_ltv, MIN_MAX_LTV, MAX_MAX_LTV
+            )));
         }
 
         let max_fee_rate = Decimal::from_str(MAX_FEE_RATE)?;
         if self.fee_rate > max_fee_rate {
-            return Err(StdError::generic_err(
-                format!("invalid fee rate: {}; must be <= {}", self.fee_rate, MAX_FEE_RATE)
-            ));
+            return Err(StdError::generic_err(format!(
+                "invalid fee rate: {}; must be <= {}",
+                self.fee_rate, MAX_FEE_RATE
+            )));
         }
 
         let max_bonus_rate = Decimal::from_str(MAX_BONUS_RATE)?;
         if self.bonus_rate > max_bonus_rate {
-            return Err(StdError::generic_err(
-                format!("invalid bonus rate: {}; must be <= {}", self.bonus_rate, MAX_BONUS_RATE)
-            ));
+            return Err(StdError::generic_err(format!(
+                "invalid bonus rate: {}; must be <= {}",
+                self.bonus_rate, MAX_BONUS_RATE
+            )));
         }
 
         Ok(())
@@ -227,10 +236,18 @@ pub struct Health {
     pub ltv: Option<Decimal>,
 }
 
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+#[schemars(deny_unknown_fields)]
+/// Returned by the UserInfo QueryMsg that we need to implement for Apollo Rewards support.
+pub struct UserInfo {
+    /// The number of shares the user has. This is the same as the user's bond_units.
+    pub shares: Uint128,
+}
+
 /// Every time the user invokes `update_position`, we record a snaphot of the position
 ///
 /// This snapshot does have any impact on the contract's normal functioning. Rather it is used by
-/// the frontend to calculate PnL. Once we have the infrastructure for calculating PnL off-chain 
+/// the frontend to calculate PnL. Once we have the infrastructure for calculating PnL off-chain
 /// available, we will migrate the contract to delete this
 #[derive(Default, Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct Snapshot {
@@ -369,7 +386,7 @@ pub mod msg {
         /// Repay specified amount of secondary asset to Red Bank;
         /// Reduce the user's debt units;
         /// Reduce the user's unlocked secondary asset amount
-        /// 
+        ///
         /// If `repay_amount` is not provided, then use all available unlocked secondary asset
         Repay {
             user_addr: Addr,
@@ -388,14 +405,14 @@ pub mod msg {
         },
         /// Swap the primary and secondary assets currently held by the contract as pending rewards,
         /// such that the two assets have the same value and can be reinvested
-        /// 
+        ///
         /// _Only used during the `Harvest` function call_
         Balance {
             max_spread: Option<Decimal>,
         },
         /// Sell an appropriate amount of a user's unlocked primary asset, such that the user has
         /// enough unlocked secondary asset to fully pay off debt
-        /// 
+        ///
         /// _Only used during the `Liquidate` function call_
         Cover {
             user_addr: Addr,
@@ -414,11 +431,11 @@ pub mod msg {
         AssertHealth {
             user_addr: Addr,
         },
-        /// Check whether the user still has an outstanding debt. If no, do nothing. If yes, waive 
+        /// Check whether the user still has an outstanding debt. If no, do nothing. If yes, waive
         /// the debt from the user's position, and emit a `bad_debt` event
-        ///  
+        ///
         /// Effectively, the bad debt is shared by all other users. An altrustic person can monitor
-        /// the event and repay the same amount of debt at Red Bank on behalf of the Fields contract, 
+        /// the event and repay the same amount of debt at Red Bank on behalf of the Fields contract,
         /// so that other users don't have to share the bad debt
         ClearBadDebt {
             user_addr: Addr,
@@ -456,14 +473,24 @@ pub mod msg {
             user: String,
         },
         /// Query the snapshot of a user's position
-        /// 
+        ///
         /// NOTE: Snapshot is a temporary functionality used for calculating the user's PnL, which
         /// is to be displayed the frontend. Once the frontend team has built an off-chain indexing
-        /// facility that can calculate PnL without the use of snapshots, this query function will 
+        /// facility that can calculate PnL without the use of snapshots, this query function will
         /// be removed.
         Snapshot {
             user: String,
         },
+        /// Query a users shares (used by Apollo Factory)
+        UserInfo {
+            address: String,
+        },
+        /// Query the total bond amount and total shares (used by Apollo Factory)
+        StrategyInfo {},
+        /// Query the TVL in the strategy (used by Apollo Factory)
+        Tvl {},
+        /// Query the APR of the strategy when not using any leverage (used by Apollo Factory)
+        Apr {},
     }
 
     /// We currently don't need any input parameter for migration
