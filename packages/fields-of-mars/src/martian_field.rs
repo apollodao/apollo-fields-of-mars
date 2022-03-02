@@ -188,6 +188,16 @@ impl From<State> for StateUnchecked {
     }
 }
 
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+#[schemars(deny_unknown_fields)]
+/// Returned by the StrategyInfo QueryMsg that we need to implement for Apollo Rewards support.
+pub struct StrategyInfoResponse {
+    /// The total number lp shares in the strategy
+    pub total_bond_amount: Uint128,
+    /// Same as state.total_bond_units
+    pub total_shares: Uint128,
+}
+
 //--------------------------------------------------------------------------------------------------
 // Position, Health, Snapshot: info of individual users' positions
 //--------------------------------------------------------------------------------------------------

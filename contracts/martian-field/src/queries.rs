@@ -1,7 +1,8 @@
 use cosmwasm_std::{Deps, Env, StdResult};
 
 use fields_of_mars::martian_field::{
-    ConfigUnchecked, Health, PositionUnchecked, Snapshot, State, UserInfoResponse,
+    ConfigUnchecked, Health, PositionUnchecked, Snapshot, State, StrategyInfoResponse,
+    UserInfoResponse,
 };
 
 use crate::health::compute_health;
@@ -53,5 +54,21 @@ pub fn query_user_info(deps: Deps, env: Env, user: String) -> StdResult<UserInfo
     Ok(UserInfoResponse {
         shares: position.bond_units,
         base_token_balance: user_bonds,
+    })
+}
+
+pub fn query_strategy_info(deps: Deps, env: Env) -> StdResult<StrategyInfoResponse> {
+    let config = CONFIG.load(deps.storage)?;
+    let state = STATE.load(deps.storage)?;
+
+    let total_bonded_amount = config.astro_generator.query_bonded_amount(
+        &deps.querier,
+        &env.contract.address,
+        &config.primary_pair.liquidity_token,
+    )?;
+
+    Ok(StrategyInfoResponse {
+        total_bond_amount: total_bonded_amount,
+        total_shares: state.total_bond_units,
     })
 }

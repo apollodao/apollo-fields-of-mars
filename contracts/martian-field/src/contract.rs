@@ -129,7 +129,7 @@ pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> StdResult<Binary> {
         QueryMsg::UserInfo {
             address,
         } => to_binary(&queries::query_user_info(deps, env, address)?),
-        QueryMsg::StrategyInfo {} => todo!(),
+        QueryMsg::StrategyInfo {} => to_binary(&queries::query_strategy_info(deps, env)?),
         QueryMsg::Tvl {} => todo!(),
         QueryMsg::Apr {} => todo!(),
     }
