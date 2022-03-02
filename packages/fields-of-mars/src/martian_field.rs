@@ -239,9 +239,11 @@ pub struct Health {
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 #[schemars(deny_unknown_fields)]
 /// Returned by the UserInfo QueryMsg that we need to implement for Apollo Rewards support.
-pub struct UserInfo {
+pub struct UserInfoResponse {
     /// The number of shares the user has. This is the same as the user's bond_units.
     pub shares: Uint128,
+    /// The number of lp shares the user's bond_units represents
+    pub base_token_balance: Uint128,
 }
 
 /// Every time the user invokes `update_position`, we record a snaphot of the position
