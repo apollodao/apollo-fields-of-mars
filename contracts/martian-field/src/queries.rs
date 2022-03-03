@@ -1,8 +1,9 @@
 use cosmwasm_std::{Deps, Env, StdResult, Uint128};
 
+use fields_of_mars::martian_field::msg::QueryMsg;
 use fields_of_mars::martian_field::{
-    ConfigUnchecked, Health, PositionUnchecked, Snapshot, State, StrategyInfoResponse, TvlResponse,
-    UserInfoResponse,
+    AprResponse, ConfigUnchecked, Health, PositionUnchecked, Snapshot, State, StrategyInfoResponse,
+    TvlResponse, UserInfoResponse,
 };
 
 use crate::health::compute_health;
@@ -114,4 +115,10 @@ pub fn query_tvl(deps: Deps, env: Env) -> StdResult<TvlResponse> {
     Ok(TvlResponse {
         tvl: total_bonded_value,
     })
+}
+
+pub fn query_apr(deps: Deps) -> StdResult<AprResponse> {
+    let config = CONFIG.load(deps.storage)?;
+
+    deps.querier.query_wasm_smart(config.apr_query_adapter, &QueryMsg::Apr {})
 }

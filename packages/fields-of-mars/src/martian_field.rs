@@ -1,7 +1,7 @@
 use std::str::FromStr;
 
 use cosmwasm_std::{
-    to_binary, Addr, Api, CosmosMsg, Decimal, StdError, StdResult, Uint128, WasmMsg,
+    to_binary, Addr, Api, CosmosMsg, Decimal, Decimal256, StdError, StdResult, Uint128, WasmMsg,
 };
 
 use schemars::JsonSchema;
@@ -68,6 +68,9 @@ pub struct ConfigBase<T> {
     pub performance_fee: Decimal,
     /// During liquidation, percentage of the user's asset to be awared to the liquidator as bonus
     pub bonus_rate: Decimal,
+    /// In order to receive Apollo Rewards, we must provide an APR QueryMsg.
+    /// Here we outsource this to the contract address provided below.
+    pub apr_query_adapter: T,
 }
 
 pub type ConfigUnchecked = ConfigBase<String>;
@@ -90,6 +93,7 @@ impl From<Config> for ConfigUnchecked {
             max_ltv: config.max_ltv,
             performance_fee: config.performance_fee,
             bonus_rate: config.bonus_rate,
+            apr_query_adapter: config.apr_query_adapter.into(),
         }
     }
 }
@@ -115,6 +119,7 @@ impl ConfigUnchecked {
             max_ltv: self.max_ltv,
             performance_fee: self.performance_fee,
             bonus_rate: self.bonus_rate,
+            apr_query_adapter: api.addr_validate(&self.apr_query_adapter)?,
         })
     }
 }
@@ -270,10 +275,15 @@ pub struct Snapshot {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
-#[schemars(deny_unknown_fields)]
 /// Returned by the Tvl QueryMsg that we need to implement for Apollo Rewards support.
 pub struct TvlResponse {
     pub tvl: Uint128,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+/// Returned by the Apr QueryMsg that we need to implement for Apollo Rewards support.
+pub struct AprResponse {
+    pub apr: Decimal256,
 }
 
 //--------------------------------------------------------------------------------------------------

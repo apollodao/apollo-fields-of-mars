@@ -42,6 +42,7 @@ fn setup_test() -> OwnedDeps<MockStorage, MockApi, MockQuerier> {
         max_ltv: Decimal::from_ratio(83u128, 100u128),
         performance_fee: Decimal::from_ratio(5u128, 100u128),
         bonus_rate: Decimal::from_ratio(1u128, 100u128),
+        apr_query_adapter: Addr::unchecked("apr_query_adapter"),
     };
 
     instantiate(deps.as_mut(), mock_env(), mock_info("deployer", &[]), config.into()).unwrap();
