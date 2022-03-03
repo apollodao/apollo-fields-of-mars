@@ -65,7 +65,7 @@ pub struct ConfigBase<T> {
     /// Maximum loan-to-value ratio (LTV) above which a user can be liquidated
     pub max_ltv: Decimal,
     /// Percentage of profit to be charged as performance fee
-    pub fee_rate: Decimal,
+    pub performance_fee: Decimal,
     /// During liquidation, percentage of the user's asset to be awared to the liquidator as bonus
     pub bonus_rate: Decimal,
 }
@@ -88,7 +88,7 @@ impl From<Config> for ConfigUnchecked {
             governance: config.governance.into(),
             operators: config.operators.iter().map(|op| op.to_string()).collect(),
             max_ltv: config.max_ltv,
-            fee_rate: config.fee_rate,
+            performance_fee: config.performance_fee,
             bonus_rate: config.bonus_rate,
         }
     }
@@ -113,7 +113,7 @@ impl ConfigUnchecked {
                 .map(|op| api.addr_validate(op))
                 .collect::<StdResult<Vec<Addr>>>()?,
             max_ltv: self.max_ltv,
-            fee_rate: self.fee_rate,
+            performance_fee: self.performance_fee,
             bonus_rate: self.bonus_rate,
         })
     }
@@ -131,10 +131,10 @@ impl Config {
         }
 
         let max_fee_rate = Decimal::from_str(MAX_FEE_RATE)?;
-        if self.fee_rate > max_fee_rate {
+        if self.performance_fee > max_fee_rate {
             return Err(StdError::generic_err(format!(
                 "invalid fee rate: {}; must be <= {}",
-                self.fee_rate, MAX_FEE_RATE
+                self.performance_fee, MAX_FEE_RATE
             )));
         }
 

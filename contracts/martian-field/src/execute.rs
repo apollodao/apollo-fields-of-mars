@@ -26,7 +26,7 @@ pub fn update_position(
 ) -> StdResult<Response> {
     let api = deps.api;
     let config = CONFIG.load(deps.storage)?;
-    
+
     let mut received_coins = AssetList::from(info.funds);
     let mut msgs: Vec<CosmosMsg> = vec![];
     let mut attrs: Vec<Attribute> = vec![];
@@ -44,19 +44,21 @@ pub fn update_position(
                 &mut msgs,
                 &mut attrs,
             )?,
-            Action::Borrow { amount } => callbacks.push(
-                CallbackMsg::Borrow {
-                    user_addr: info.sender.clone(),
-                    borrow_amount: amount,
-                }
-            ),
-            Action::Repay { amount } => callbacks.push(
-                CallbackMsg::Repay {
-                    user_addr: info.sender.clone(),
-                    repay_amount: Some(amount),
-                }
-            ),
-            Action::Bond { slippage_tolerance } => callbacks.extend([
+            Action::Borrow {
+                amount,
+            } => callbacks.push(CallbackMsg::Borrow {
+                user_addr: info.sender.clone(),
+                borrow_amount: amount,
+            }),
+            Action::Repay {
+                amount,
+            } => callbacks.push(CallbackMsg::Repay {
+                user_addr: info.sender.clone(),
+                repay_amount: Some(amount),
+            }),
+            Action::Bond {
+                slippage_tolerance,
+            } => callbacks.extend([
                 CallbackMsg::ProvideLiquidity {
                     user_addr: Some(info.sender.clone()),
                     slippage_tolerance,
@@ -65,7 +67,9 @@ pub fn update_position(
                     user_addr: Some(info.sender.clone()),
                 },
             ]),
-            Action::Unbond { bond_units_to_reduce } => callbacks.extend([
+            Action::Unbond {
+                bond_units_to_reduce,
+            } => callbacks.extend([
                 CallbackMsg::Unbond {
                     user_addr: info.sender.clone(),
                     bond_units_to_reduce,
@@ -74,24 +78,26 @@ pub fn update_position(
                     user_addr: info.sender.clone(),
                 },
             ]),
-            Action::Swap { offer_amount, max_spread } => callbacks.push(
-                CallbackMsg::Swap {
-                    user_addr: Some(info.sender.clone()),
-                    offer_asset_info: config.primary_asset_info.clone(),
-                    offer_amount: Some(offer_amount),
-                    max_spread,
-                }
-            ),
+            Action::Swap {
+                offer_amount,
+                max_spread,
+            } => callbacks.push(CallbackMsg::Swap {
+                user_addr: Some(info.sender.clone()),
+                offer_asset_info: config.primary_asset_info.clone(),
+                offer_amount: Some(offer_amount),
+                max_spread,
+            }),
         }
     }
 
     // after all deposits have been handled, we assert that the `received_natives` list is empty
-    // this way, we ensure that the user does not send any extra fund which will get lost in the 
+    // this way, we ensure that the user does not send any extra fund which will get lost in the
     // contract
     if received_coins.len() > 0 {
-        return Err(StdError::generic_err(
-            format!("extra funds received: {}", received_coins.to_string())
-        ));
+        return Err(StdError::generic_err(format!(
+            "extra funds received: {}",
+            received_coins.to_string()
+        )));
     }
 
     // after user selected actions, we executes two more callbacks:
@@ -108,7 +114,7 @@ pub fn update_position(
         },
         CallbackMsg::Snapshot {
             user_addr: info.sender.clone(),
-        }
+        },
     ]);
 
     let callback_msgs = callbacks
@@ -140,8 +146,8 @@ fn handle_deposit(
     // If asset is a native token, we assert that the same amount was indeed received
     // If asset is a CW20 token, we:
     // - Transfer the specified amount from the user's wallet
-    // - Remove the asset from the list. After every deposit action has been processed, assert that 
-    // the asset list is empty. This way, we ensure the user doesn't send any extra fund, which will 
+    // - Remove the asset from the list. After every deposit action has been processed, assert that
+    // the asset list is empty. This way, we ensure the user doesn't send any extra fund, which will
     // be lost in the contract
     match &asset.info {
         AssetInfo::Cw20(_) => {
@@ -189,15 +195,13 @@ pub fn harvest(
     // the pending rewards
     let mut msgs: Vec<CosmosMsg> = vec![];
     if rewards.len() > 0 {
-        msgs.push(
-            config.astro_generator.claim_rewards_msg(&config.primary_pair.liquidity_token)?
-        );
+        msgs.push(config.astro_generator.claim_rewards_msg(&config.primary_pair.liquidity_token)?);
         state.pending_rewards.add_many(&rewards)?;
     }
 
     // a portion of the pending rewards will be charged as fees
     let mut fees = state.pending_rewards.clone();
-    fees.apply(|asset| asset.amount = asset.amount * config.fee_rate);
+    fees.apply(|asset| asset.amount = asset.amount * config.performance_fee);
     fees.purge();
     msgs.extend(fees.transfer_msgs(&config.treasury)?);
 
@@ -278,11 +282,11 @@ pub fn liquidate(
     // 5. among all remaining assets, send the amount corresponding to `bonus_rate` to the liquidator
     // 6. refund all assets that're left to the user
     //
-    // NOTE: in the previous versions, we sell **all** primary assets, which is not optimal because 
-    // this will incur bigger slippage, causing worse liquidation cascade, and be potentially lucrative 
+    // NOTE: in the previous versions, we sell **all** primary assets, which is not optimal because
+    // this will incur bigger slippage, causing worse liquidation cascade, and be potentially lucrative
     // for sandwich attackers
     //
-    // now, we calculate how much additional secondary asset is needed to fully pay off debt, and 
+    // now, we calculate how much additional secondary asset is needed to fully pay off debt, and
     // reverse-simulate how much primary asset needs to be sold
     let callbacks = [
         CallbackMsg::Unbond {
