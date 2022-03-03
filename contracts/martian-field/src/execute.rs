@@ -1,6 +1,6 @@
 use cosmwasm_std::{
     attr, Addr, Attribute, CosmosMsg, Decimal, DepsMut, Env, Event, MessageInfo, Response,
-    StdError, StdResult, Storage,
+    StdError, StdResult, Storage, SubMsg,
 };
 
 use cw_asset::{Asset, AssetInfo, AssetList};
@@ -58,26 +58,36 @@ pub fn update_position(
             }),
             Action::Bond {
                 slippage_tolerance,
-            } => callbacks.extend([
-                CallbackMsg::ProvideLiquidity {
-                    user_addr: Some(info.sender.clone()),
-                    slippage_tolerance,
-                },
-                CallbackMsg::Bond {
-                    user_addr: Some(info.sender.clone()),
-                },
-            ]),
+            } => {
+                // Need to call Apollo Factory UpdateUserRewards before share change!
+                msgs.push(config.apollo_factory.update_rewards_msg(&info.sender)?);
+
+                callbacks.extend([
+                    CallbackMsg::ProvideLiquidity {
+                        user_addr: Some(info.sender.clone()),
+                        slippage_tolerance,
+                    },
+                    CallbackMsg::Bond {
+                        user_addr: Some(info.sender.clone()),
+                    },
+                ]);
+            }
             Action::Unbond {
                 bond_units_to_reduce,
-            } => callbacks.extend([
-                CallbackMsg::Unbond {
-                    user_addr: info.sender.clone(),
-                    bond_units_to_reduce,
-                },
-                CallbackMsg::WithdrawLiquidity {
-                    user_addr: info.sender.clone(),
-                },
-            ]),
+            } => {
+                // Need to call Apollo Factory UpdateUserRewards before share change!
+                msgs.push(config.apollo_factory.update_rewards_msg(&info.sender)?);
+
+                callbacks.extend([
+                    CallbackMsg::Unbond {
+                        user_addr: info.sender.clone(),
+                        bond_units_to_reduce,
+                    },
+                    CallbackMsg::WithdrawLiquidity {
+                        user_addr: info.sender.clone(),
+                    },
+                ]);
+            }
             Action::Swap {
                 offer_amount,
                 max_spread,
@@ -325,7 +335,7 @@ pub fn liquidate(
 
     let event = Event::new("liquidated")
         .add_attribute("liquidator", info.sender)
-        .add_attribute("user", user_addr)
+        .add_attribute("user", user_addr.clone())
         .add_attribute("bond_units", position.bond_units)
         .add_attribute("debt_units", position.debt_units)
         .add_attribute("bond_value", health.bond_value)
@@ -333,6 +343,10 @@ pub fn liquidate(
         .add_attribute("ltv", ltv.to_string());
 
     Ok(Response::new()
+        // Need to call Apollo Factory UpdateUserRewards before share change!
+        // We add it as a submessage instead of a regular message, so that in case
+        // it fails, we can still liquidate the position.
+        .add_submessage(SubMsg::new(config.apollo_factory.update_rewards_msg(&user_addr)?))
         .add_messages(callback_msgs)
         .add_attribute("action", "martian_field/execute/liquidate")
         .add_event(event))

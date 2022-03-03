@@ -5,7 +5,7 @@ use cosmwasm_std::{Addr, Coin, Decimal, OwnedDeps, StdError};
 
 use cw_asset::{Asset, AssetInfo};
 
-use fields_of_mars::adapters::{Generator, Oracle, Pair, RedBank};
+use fields_of_mars::adapters::{ApolloFactory, Generator, Oracle, Pair, RedBank};
 use fields_of_mars::martian_field::msg::{Action, ExecuteMsg};
 use fields_of_mars::martian_field::Config;
 
@@ -43,6 +43,9 @@ fn setup_test() -> OwnedDeps<MockStorage, MockApi, MockQuerier> {
         performance_fee: Decimal::from_ratio(5u128, 100u128),
         bonus_rate: Decimal::from_ratio(1u128, 100u128),
         apr_query_adapter: Addr::unchecked("apr_query_adapter"),
+        apollo_factory: ApolloFactory {
+            contract_addr: Addr::unchecked("apollo_factory"),
+        },
     };
 
     instantiate(deps.as_mut(), mock_env(), mock_info("deployer", &[]), config.into()).unwrap();

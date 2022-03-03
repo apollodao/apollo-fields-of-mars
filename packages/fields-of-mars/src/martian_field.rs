@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 
 use cw_asset::{AssetInfoBase, AssetListBase};
 
-use crate::adapters::{GeneratorBase, OracleBase, PairBase, RedBankBase};
+use crate::adapters::{ApolloFactoryBase, GeneratorBase, OracleBase, PairBase, RedBankBase};
 
 const MIN_MAX_LTV: &str = "0.75";
 const MAX_MAX_LTV: &str = "0.9";
@@ -71,6 +71,9 @@ pub struct ConfigBase<T> {
     /// In order to receive Apollo Rewards, we must provide an APR QueryMsg.
     /// Here we outsource this to the contract address provided below.
     pub apr_query_adapter: T,
+    /// The Apollo Factory contract.
+    /// We need to call the UpdateUserRewards ExecuteMsg on it before every user share change.
+    pub apollo_factory: ApolloFactoryBase<T>,
 }
 
 pub type ConfigUnchecked = ConfigBase<String>;
@@ -94,6 +97,7 @@ impl From<Config> for ConfigUnchecked {
             performance_fee: config.performance_fee,
             bonus_rate: config.bonus_rate,
             apr_query_adapter: config.apr_query_adapter.into(),
+            apollo_factory: config.apollo_factory.into(),
         }
     }
 }
@@ -120,6 +124,7 @@ impl ConfigUnchecked {
             performance_fee: self.performance_fee,
             bonus_rate: self.bonus_rate,
             apr_query_adapter: api.addr_validate(&self.apr_query_adapter)?,
+            apollo_factory: self.apollo_factory.check(api)?,
         })
     }
 }

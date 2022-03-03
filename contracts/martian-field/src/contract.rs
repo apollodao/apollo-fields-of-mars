@@ -108,6 +108,7 @@ pub fn reply(deps: DepsMut, _env: Env, reply: Reply) -> StdResult<Response> {
         0 => replies::after_provide_liquidity(deps, unwrap_reply(reply)?),
         1 => replies::after_withdraw_liquidity(deps, unwrap_reply(reply)?),
         2 => replies::after_swap(deps, unwrap_reply(reply)?),
+        3 => replies::failed_apollo_reward_update(reply.result),
         id => Err(StdError::generic_err(format!("invalid reply id: {}", id))),
     }
 }
