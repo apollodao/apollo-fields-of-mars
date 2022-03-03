@@ -269,6 +269,13 @@ pub struct Snapshot {
     pub health: Health,
 }
 
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+#[schemars(deny_unknown_fields)]
+/// Returned by the Tvl QueryMsg that we need to implement for Apollo Rewards support.
+pub struct TvlResponse {
+    pub tvl: Uint128,
+}
+
 //--------------------------------------------------------------------------------------------------
 // Message and response types
 //--------------------------------------------------------------------------------------------------
