@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import * as fs from "fs";
 import * as promptly from "promptly";
 import {
@@ -13,6 +14,15 @@ const DEFAULT_GAS_SETTINGS = {
   gasAdjustment: 1.4,
 };
 
+type AxiosError = {
+  isAxiosError: boolean;
+  response: any;
+};
+
+export function isAxiosError(error: any): error is AxiosError {
+  return error && typeof error === "object" && error.hasOwnProperty("isAxiosError");
+}
+
 /**
  * @notice Send a transaction. Return result if successful, throw error if failed
  *
@@ -20,12 +30,20 @@ const DEFAULT_GAS_SETTINGS = {
  * function more flexible, but I'm too lazy for that
  */
 export async function sendTransaction(signer: Wallet, msgs: Msg[]) {
-  const tx = await signer.createAndSignTx({ msgs, ...DEFAULT_GAS_SETTINGS });
-  const result = await signer.lcd.tx.broadcast(tx);
-  if (isTxError(result)) {
-    throw new Error("tx failed! raw log: " + result.raw_log);
+  try {
+    const tx = await signer.createAndSignTx({ msgs, ...DEFAULT_GAS_SETTINGS });
+    const result = await signer.lcd.tx.broadcast(tx);
+    if (isTxError(result)) {
+      throw new Error("tx failed! raw log: " + result.raw_log);
+    }
+    return result;
+  } catch (error: any) {
+    let errorMsg;
+    if (isAxiosError(error)) {
+      errorMsg = error.response?.data.error || error.response?.data.message || "";
+    } else errorMsg = error.message;
+    throw new Error(errorMsg);
   }
-  return result;
 }
 
 /**
