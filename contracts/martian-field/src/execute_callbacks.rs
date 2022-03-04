@@ -577,10 +577,10 @@ pub fn assert_health(deps: DepsMut, env: Env, user_addr: Addr) -> StdResult<Resp
     let position = POSITION.load(deps.storage, &user_addr).unwrap_or_default();
     let health = compute_health(&deps.querier, &env, &config, &state, &position)?;
 
-    // If ltv is Some(ltv), we assert it is no larger than `config.max_ltv`
+    // If ltv is Some(ltv), we assert it is no larger than `config.max_initial_ltv`
     // If it is None, meaning `bond_value` is zero, we assert debt is also zero
     let healthy = if let Some(ltv) = health.ltv {
-        ltv <= config.max_ltv
+        ltv <= config.max_initial_ltv
     } else {
         health.debt_value.is_zero()
     };

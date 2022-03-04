@@ -62,6 +62,8 @@ pub struct ConfigBase<T> {
     pub operators: Vec<T>,
     /// Maximum loan-to-value ratio (LTV) above which a user can be liquidated
     pub max_ltv: Decimal,
+    /// Maximum loan-to-value ratio (LTV) when updating a user's position
+    pub max_initial_ltv: Decimal,
     /// Percentage of profit to be charged as performance fee
     pub fee_rate: Decimal,
     /// During liquidation, percentage of the user's asset to be awared to the liquidator as bonus
@@ -89,6 +91,7 @@ impl From<Config> for ConfigUnchecked {
             governance: config.governance.into(),
             operators: config.operators.iter().map(|op| op.to_string()).collect(),
             max_ltv: config.max_ltv,
+            max_initial_ltv: config.max_initial_ltv,
             fee_rate: config.fee_rate,
             bonus_rate: config.bonus_rate,
             min_position_size: config.min_position_size
@@ -111,6 +114,7 @@ impl ConfigUnchecked {
             governance: api.addr_validate(&self.governance)?,
             operators: self.operators.iter().map(|op| api.addr_validate(op)).collect::<StdResult<Vec<Addr>>>()?,
             max_ltv: self.max_ltv,
+            max_initial_ltv: self.max_initial_ltv,
             fee_rate: self.fee_rate,
             bonus_rate: self.bonus_rate,
             min_position_size: self.min_position_size

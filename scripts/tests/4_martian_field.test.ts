@@ -125,6 +125,7 @@ async function setupTest() {
     governance: deployer.key.accAddress,
     operators: [deployer.key.accAddress],
     max_ltv: "0.75", // 75%, i.e. for every 100 UST asset there must be no more than 75 UST debt
+    max_initial_ltv: "0.66", // 66%, i.e. for every 100 UST asset there must be no more than 66 UST debt when updating the position
     fee_rate: "0.2", // 20%
     bonus_rate: "0.05", // 5%
   };
