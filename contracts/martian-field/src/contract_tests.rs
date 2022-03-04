@@ -40,6 +40,7 @@ fn setup_test() -> OwnedDeps<MockStorage, MockApi, MockQuerier> {
         governance: Addr::unchecked("governance"),
         operators: vec![Addr::unchecked("operator")],
         max_ltv: Decimal::from_ratio(83u128, 100u128),
+        max_initial_ltv: Decimal::from_ratio(75u128, 100u128),
         fee_rate: Decimal::from_ratio(5u128, 100u128),
         bonus_rate: Decimal::from_ratio(1u128, 100u128),
     };
@@ -64,8 +65,8 @@ fn handling_native_deposits() {
 
     // fund amount mismatch
     let deposits = vec![
-        Coin::new(12345, "uluna"), 
-        Coin::new(69420, "uusd"), 
+        Coin::new(12345, "uluna"),
+        Coin::new(69420, "uusd"),
     ];
     let msg = ExecuteMsg::UpdatePosition(vec![
         Action::Deposit(Asset::native("uluna", 12345u128).into()),
@@ -76,8 +77,8 @@ fn handling_native_deposits() {
 
     // extra fund
     let deposits = vec![
-        Coin::new(12345, "uluna"), 
-        Coin::new(69420, "uusd"), 
+        Coin::new(12345, "uluna"),
+        Coin::new(69420, "uusd"),
         Coin::new(88888, "uatom"),
     ];
     let msg = ExecuteMsg::UpdatePosition(vec![

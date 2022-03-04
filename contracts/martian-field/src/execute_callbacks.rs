@@ -402,8 +402,8 @@ pub fn balance(
     // if primary_asset_value > secondary_asset_value, we swap primary >> secondary
     // if secondary_asset_value > primary_asset_value, we swap secondary >> primary
     // if equal, we skip
-    let (offer_asset_info, offer_asset_available_amount) = 
-        match primary_asset_value.cmp(&secondary_asset_value) 
+    let (offer_asset_info, offer_asset_available_amount) =
+        match primary_asset_value.cmp(&secondary_asset_value)
     {
         Ordering::Greater => (config.primary_asset_info.clone(), primary_asset_amount),
         Ordering::Less => (config.secondary_asset_info.clone(), secondary_asset_amount),
@@ -415,7 +415,7 @@ pub fn balance(
     // e.g. we have $120 worth of UST and $100 worth of ANC. the diff in value is $20, so we swap
     // $20 / 2 = $10 worth of UST to ANC. ideally, this should leave us $110 worth of each
     //
-    // in reality, considering slippage, commission, we will end up with $110 worth of UST and 
+    // in reality, considering slippage, commission, we will end up with $110 worth of UST and
     // **slightly less than $110 worth** of ANC, so this method is not very optimized. the best way
     // is to solve a quadratic function which contains terms describing slippage and commission rate
     // to find the optimal swap amount. i have worked out the math somewhere else and will later
@@ -430,7 +430,7 @@ pub fn balance(
     let value_to_swap = value_diff.multiply_ratio(1u128, 2u128);
 
     let offer_asset = Asset::new(
-        offer_asset_info, 
+        offer_asset_info,
         offer_asset_available_amount.multiply_ratio(value_to_swap, higher_value)
     );
 
@@ -482,7 +482,7 @@ pub fn cover(
         .cloned()
         .unwrap_or_else(|| Asset::new(config.secondary_asset_info.clone(), 0u128));
 
-    // calculate how much additional secondary asset is needed to fully pay off the user's debt 
+    // calculate how much additional secondary asset is needed to fully pay off the user's debt
     let secondary_needed_amount = if debt_amount > secondary_available.amount {
         debt_amount.checked_sub(secondary_available.amount)?
     } else {
@@ -492,7 +492,7 @@ pub fn cover(
 
     // reverse-simulate how much primary asset needs to be sold
     let mut primary_sell_amount = config.primary_pair.query_reverse_simulate(
-        &deps.querier, 
+        &deps.querier,
         &secondary_needed
     )?;
 
@@ -510,7 +510,7 @@ pub fn cover(
     // to get our desired output, we actually need to offer 1 unit of LUNA more than the reverse-
     // simulated amount: 83736355 + 1 = 83736356
     // computeXykSwapOutput(83736356, 1497005315, 24450395383) = 1291320960
-    // which is exactly the amount we need 
+    // which is exactly the amount we need
     //
     // not a very elegant solution, but it works and is the best i can come up with rn
     primary_sell_amount = primary_sell_amount.checked_add(Uint128::new(1))?;
@@ -528,7 +528,7 @@ pub fn cover(
     position.unlocked_assets.deduct(&primary_to_sell)?;
     POSITION.save(deps.storage, &user_addr, &position)?;
     CACHED_USER_ADDR.save(deps.storage, &user_addr)?;
-    
+
     Ok(Response::new()
         .add_submessage(config.primary_pair.swap_submsg(
             2,
@@ -577,10 +577,10 @@ pub fn assert_health(deps: DepsMut, env: Env, user_addr: Addr) -> StdResult<Resp
     let position = POSITION.load(deps.storage, &user_addr).unwrap_or_default();
     let health = compute_health(&deps.querier, &env, &config, &state, &position)?;
 
-    // If ltv is Some(ltv), we assert it is no larger than `config.max_ltv`
+    // If ltv is Some(ltv), we assert it is no larger than `config.max_initial_ltv`
     // If it is None, meaning `bond_value` is zero, we assert debt is also zero
     let healthy = if let Some(ltv) = health.ltv {
-        ltv <= config.max_ltv
+        ltv <= config.max_initial_ltv
     } else {
         health.debt_value.is_zero()
     };
