@@ -1,4 +1,4 @@
-use cosmwasm_std::{Addr};
+use cosmwasm_std::Addr;
 use cw_storage_plus::{Item, Map};
 
 use fields_of_mars::martian_field::{Config, Position, Snapshot, State};

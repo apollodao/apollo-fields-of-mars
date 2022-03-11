@@ -11,9 +11,14 @@ use crate::helpers::unwrap_reply;
 use crate::{execute, execute_callbacks as callbacks, execute_replies as replies, queries};
 
 #[entry_point]
-pub fn instantiate(deps: DepsMut, _env: Env, _info: MessageInfo, msg: InstantiateMsg) -> StdResult<Response> {
+pub fn instantiate(
+    deps: DepsMut,
+    _env: Env,
+    _info: MessageInfo,
+    msg: InstantiateMsg,
+) -> StdResult<Response> {
     let config = msg.check(deps.api)?;
-    config.validate()?;
+    config.validate(&deps.querier)?;
     execute::init_storage(deps, config)
 }
 
@@ -36,7 +41,12 @@ pub fn execute(deps: DepsMut, env: Env, info: MessageInfo, msg: ExecuteMsg) -> S
     }
 }
 
-fn execute_callback(deps: DepsMut, env: Env, info: MessageInfo, msg: CallbackMsg) -> StdResult<Response> {
+fn execute_callback(
+    deps: DepsMut,
+    env: Env,
+    info: MessageInfo,
+    msg: CallbackMsg,
+) -> StdResult<Response> {
     if info.sender != env.contract.address {
         return Err(StdError::generic_err("callbacks cannot be invoked externally"));
     }
@@ -73,7 +83,11 @@ fn execute_callback(deps: DepsMut, env: Env, info: MessageInfo, msg: CallbackMsg
             offer_asset_info,
             offer_amount,
             max_spread,
-        } => callbacks::swap(deps, user_addr, offer_asset_info, offer_amount, max_spread),
+        } => callbacks::swap(deps, env, user_addr, offer_asset_info, offer_amount, max_spread),
+        CallbackMsg::AfterSwap {
+            user_addr,
+            return_asset_before,
+        } => callbacks::after_swap(deps, env, user_addr, return_asset_before),
         CallbackMsg::Balance {
             max_spread,
         } => callbacks::balance(deps, env, max_spread),
@@ -97,7 +111,6 @@ pub fn reply(deps: DepsMut, _env: Env, reply: Reply) -> StdResult<Response> {
     match reply.id {
         0 => replies::after_provide_liquidity(deps, unwrap_reply(reply)?),
         1 => replies::after_withdraw_liquidity(deps, unwrap_reply(reply)?),
-        2 => replies::after_swap(deps, unwrap_reply(reply)?),
         id => Err(StdError::generic_err(format!("invalid reply id: {}", id))),
     }
 }

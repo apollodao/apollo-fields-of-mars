@@ -9,7 +9,10 @@ use cw20::Cw20ExecuteMsg;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use astroport::pair::{Cw20HookMsg, ExecuteMsg, PoolResponse, QueryMsg, ReverseSimulationResponse};
+use astroport::{
+    asset::PairInfo,
+    pair::{Cw20HookMsg, ExecuteMsg, PoolResponse, QueryMsg, ReverseSimulationResponse},
+};
 
 use cw_asset::{Asset, AssetInfo, AssetUnchecked};
 
@@ -117,15 +120,14 @@ impl Pair {
         ))
     }
 
-    /// @notice Generate submsg for swapping specified asset
+    /// @notice Generate msg for swapping specified asset
     /// NOTE: For now, we don't specify a slippage tolerance
-    pub fn swap_submsg(
+    pub fn swap_msg(
         &self,
-        id: u64,
         asset: &Asset,
         belief_price: Option<Decimal>,
         max_spread: Option<Decimal>,
-    ) -> StdResult<SubMsg> {
+    ) -> StdResult<CosmosMsg> {
         let msg = match &asset.info {
             AssetInfo::Cw20(_) => asset.send_msg(
                 &self.contract_addr,
@@ -149,7 +151,7 @@ impl Pair {
                 }],
             }),
         };
-        Ok(SubMsg::reply_on_success(msg, id))
+        Ok(msg)
     }
 
     /// Query the Astroport pool, parse response, and return the following 3-tuple:
@@ -182,6 +184,10 @@ impl Pair {
             .amount;
 
         Ok((primary_asset_depth, secondary_asset_depth, response.total_share))
+    }
+
+    pub fn query_pair(&self, querier: &QuerierWrapper) -> StdResult<PairInfo> {
+        querier.query_wasm_smart(self.contract_addr.to_string(), &QueryMsg::Pair {})
     }
 
     /// Calculate how much offer asset is needed to return a specified amount of ask asset

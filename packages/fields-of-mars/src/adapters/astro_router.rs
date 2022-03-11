@@ -1,4 +1,4 @@
-use cosmwasm_std::{to_binary, Addr, Api, Coin, CosmosMsg, StdResult, SubMsg, Uint128, WasmMsg};
+use cosmwasm_std::{to_binary, Addr, Api, Coin, CosmosMsg, StdResult, Uint128, WasmMsg};
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};

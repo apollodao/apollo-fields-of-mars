@@ -26,7 +26,7 @@ pub fn update_position(
 ) -> StdResult<Response> {
     let api = deps.api;
     let config = CONFIG.load(deps.storage)?;
-    
+
     let mut received_coins = AssetList::from(info.funds);
     let mut msgs: Vec<CosmosMsg> = vec![];
     let mut attrs: Vec<Attribute> = vec![];
@@ -44,19 +44,21 @@ pub fn update_position(
                 &mut msgs,
                 &mut attrs,
             )?,
-            Action::Borrow { amount } => callbacks.push(
-                CallbackMsg::Borrow {
-                    user_addr: info.sender.clone(),
-                    borrow_amount: amount,
-                }
-            ),
-            Action::Repay { amount } => callbacks.push(
-                CallbackMsg::Repay {
-                    user_addr: info.sender.clone(),
-                    repay_amount: Some(amount),
-                }
-            ),
-            Action::Bond { slippage_tolerance } => callbacks.extend([
+            Action::Borrow {
+                amount,
+            } => callbacks.push(CallbackMsg::Borrow {
+                user_addr: info.sender.clone(),
+                borrow_amount: amount,
+            }),
+            Action::Repay {
+                amount,
+            } => callbacks.push(CallbackMsg::Repay {
+                user_addr: info.sender.clone(),
+                repay_amount: Some(amount),
+            }),
+            Action::Bond {
+                slippage_tolerance,
+            } => callbacks.extend([
                 CallbackMsg::ProvideLiquidity {
                     user_addr: Some(info.sender.clone()),
                     slippage_tolerance,
@@ -65,7 +67,9 @@ pub fn update_position(
                     user_addr: Some(info.sender.clone()),
                 },
             ]),
-            Action::Unbond { bond_units_to_reduce } => callbacks.extend([
+            Action::Unbond {
+                bond_units_to_reduce,
+            } => callbacks.extend([
                 CallbackMsg::Unbond {
                     user_addr: info.sender.clone(),
                     bond_units_to_reduce,
@@ -74,24 +78,26 @@ pub fn update_position(
                     user_addr: info.sender.clone(),
                 },
             ]),
-            Action::Swap { offer_amount, max_spread } => callbacks.push(
-                CallbackMsg::Swap {
-                    user_addr: Some(info.sender.clone()),
-                    offer_asset_info: config.primary_asset_info.clone(),
-                    offer_amount: Some(offer_amount),
-                    max_spread,
-                }
-            ),
+            Action::Swap {
+                offer_amount,
+                max_spread,
+            } => callbacks.push(CallbackMsg::Swap {
+                user_addr: Some(info.sender.clone()),
+                offer_asset_info: config.primary_asset_info.clone(),
+                offer_amount: Some(offer_amount),
+                max_spread,
+            }),
         }
     }
 
     // after all deposits have been handled, we assert that the `received_natives` list is empty
-    // this way, we ensure that the user does not send any extra fund which will get lost in the 
+    // this way, we ensure that the user does not send any extra fund which will get lost in the
     // contract
     if received_coins.len() > 0 {
-        return Err(StdError::generic_err(
-            format!("extra funds received: {}", received_coins.to_string())
-        ));
+        return Err(StdError::generic_err(format!(
+            "extra funds received: {}",
+            received_coins.to_string()
+        )));
     }
 
     // after user selected actions, we executes two more callbacks:
@@ -108,7 +114,7 @@ pub fn update_position(
         },
         CallbackMsg::Snapshot {
             user_addr: info.sender.clone(),
-        }
+        },
     ]);
 
     let callback_msgs = callbacks
@@ -140,8 +146,8 @@ fn handle_deposit(
     // If asset is a native token, we assert that the same amount was indeed received
     // If asset is a CW20 token, we:
     // - Transfer the specified amount from the user's wallet
-    // - Remove the asset from the list. After every deposit action has been processed, assert that 
-    // the asset list is empty. This way, we ensure the user doesn't send any extra fund, which will 
+    // - Remove the asset from the list. After every deposit action has been processed, assert that
+    // the asset list is empty. This way, we ensure the user doesn't send any extra fund, which will
     // be lost in the contract
     match &asset.info {
         AssetInfo::Cw20(_) => {
@@ -189,9 +195,7 @@ pub fn harvest(
     // the pending rewards
     let mut msgs: Vec<CosmosMsg> = vec![];
     if rewards.len() > 0 {
-        msgs.push(
-            config.astro_generator.claim_rewards_msg(&config.primary_pair.liquidity_token)?
-        );
+        msgs.push(config.astro_generator.claim_rewards_msg(&config.primary_pair.liquidity_token)?);
         state.pending_rewards.add_many(&rewards)?;
     }
 
@@ -206,7 +210,6 @@ pub fn harvest(
     STATE.save(deps.storage, &state)?;
 
     // if there are ASTRO tokens available to be reinvested, we first swap it to the secondary asset
-    // asset
     let mut callbacks: Vec<CallbackMsg> = vec![];
     if let Some(astro_token) = state.pending_rewards.find(&config.astro_token_info) {
         callbacks.push(CallbackMsg::Swap {
@@ -215,6 +218,22 @@ pub fn harvest(
             offer_amount: Some(astro_token.amount),
             max_spread,
         });
+    }
+
+    // if the proxy_reward asset is not equal to the primary or secondary asset, swap it to the secondary asset
+    if let Some(proxy_reward_asset) = config.proxy_reward_asset {
+        if proxy_reward_asset != config.primary_asset_info
+            && proxy_reward_asset != config.secondary_asset_info
+        {
+            if let Some(proxy_rewards) = state.pending_rewards.find(&proxy_reward_asset) {
+                callbacks.push(CallbackMsg::Swap {
+                    user_addr: None,
+                    offer_asset_info: proxy_reward_asset,
+                    offer_amount: Some(proxy_rewards.amount),
+                    max_spread,
+                })
+            }
+        }
     }
 
     // once ASTRO is sold, pending rewards should only consist of primary and secondary assets
@@ -278,11 +297,11 @@ pub fn liquidate(
     // 5. among all remaining assets, send the amount corresponding to `bonus_rate` to the liquidator
     // 6. refund all assets that're left to the user
     //
-    // NOTE: in the previous versions, we sell **all** primary assets, which is not optimal because 
-    // this will incur bigger slippage, causing worse liquidation cascade, and be potentially lucrative 
+    // NOTE: in the previous versions, we sell **all** primary assets, which is not optimal because
+    // this will incur bigger slippage, causing worse liquidation cascade, and be potentially lucrative
     // for sandwich attackers
     //
-    // now, we calculate how much additional secondary asset is needed to fully pay off debt, and 
+    // now, we calculate how much additional secondary asset is needed to fully pay off debt, and
     // reverse-simulate how much primary asset needs to be sold
     let callbacks = [
         CallbackMsg::Unbond {
@@ -342,7 +361,7 @@ pub fn update_config(deps: DepsMut, info: MessageInfo, new_config: Config) -> St
     }
 
     // New config must be valid
-    config.validate()?;
+    config.validate(&deps.querier)?;
 
     CONFIG.save(deps.storage, &new_config)?;
     Ok(Response::default())

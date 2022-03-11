@@ -7,6 +7,7 @@ use cosmwasm_std::{
 
 use cw_asset::{Asset, AssetInfo, AssetList};
 
+use fields_of_mars::martian_field::msg::CallbackMsg;
 use fields_of_mars::martian_field::{Position, Snapshot, State};
 
 use crate::health::compute_health;
@@ -310,6 +311,7 @@ pub fn repay(
 
 pub fn swap(
     deps: DepsMut,
+    env: Env,
     user_addr_option: Option<Addr>,
     offer_asset_info: AssetInfo,
     offer_amount_option: Option<Uint128>,
@@ -330,17 +332,27 @@ pub fn swap(
         assets = &mut state.pending_rewards;
     }
 
-    // we only perform two kinds of swaps:
+    // we only perform three kinds of swaps:
     // primary >> secondary; in this case, we use the primary-secondary pair
-    // ASTRO >> secondary; in this case, we use the ASTRO-secondary pair
-    let pair = if offer_asset_info == config.primary_asset_info {
-        &config.primary_pair
+    // proxy_reward >> secondary; in this case we use the router through the bridge assets.
+    // ASTRO >> secondary; in this case, we use the ASTRO-secondary pair, or the router if
+    // astro_bridge_assets are set.
+    let pair;
+    let bridge_assets;
+    if offer_asset_info == config.primary_asset_info {
+        pair = Some(&config.primary_pair);
+        bridge_assets = vec![];
+    } else if Some(offer_asset_info.clone()) == config.proxy_reward_asset {
+        pair = None;
+        bridge_assets = config.proxy_reward_bridge_assets;
     } else if offer_asset_info == config.astro_token_info {
-        &config.astro_pair
+        pair = Some(&config.astro_pair);
+        bridge_assets = config.astro_bridge_assets;
     } else {
-        return Err(StdError::generic_err(
-            format!("invalid offer asset: {}", offer_asset_info.to_string())
-        ));
+        return Err(StdError::generic_err(format!(
+            "invalid offer asset: {}",
+            offer_asset_info.to_string()
+        )));
     };
 
     // if swap amount is unspecified, we swap all that's available
@@ -357,25 +369,85 @@ pub fn swap(
     assets.deduct(&offer_asset)?;
 
     // update storage
-    // if `user_addr` is provided, we cache it so that it can be accessed when handling the reply
     if let Some(user_addr) = &user_addr_option {
         POSITION.save(deps.storage, user_addr, &position)?;
-        CACHED_USER_ADDR.save(deps.storage, user_addr)?;
+    } else {
+        STATE.save(deps.storage, &state)?;
+    }
+
+    //Swap msg
+    let swap_msg = if !bridge_assets.is_empty() {
+        //Use router
+        let mut swap_assets = vec![config.primary_asset_info];
+        swap_assets.extend(bridge_assets);
+        swap_assets.push(config.secondary_asset_info.clone());
+
+        config.astro_router.swap_msg(offer_asset.clone(), swap_assets, None, None)?
+    } else if let Some(pair) = pair {
+        //Swap directly over pair
+        pair.swap_msg(&offer_asset, None, max_spread)?
+    } else {
+        return Err(StdError::generic_err("No path from offer asset to secondary asset"));
+    };
+
+    let secondary_balance =
+        config.secondary_asset_info.query_balance(&deps.querier, env.contract.address.clone())?;
+    let return_asset_before = Asset::new(config.secondary_asset_info.clone(), secondary_balance);
+
+    //After swap msg. Used to update available balance with the amount returned from the swap
+    let after_swap_msg = CallbackMsg::AfterSwap {
+        user_addr: user_addr_option,
+        return_asset_before,
+    }
+    .into_cosmos_msg(&env.contract.address)?;
+
+    Ok(Response::new()
+        .add_message(swap_msg)
+        .add_message(after_swap_msg)
+        .add_attribute("action", "martian_field/callback/swap")
+        .add_attribute("asset_offered", offer_asset.to_string()))
+}
+
+pub fn after_swap(
+    deps: DepsMut,
+    env: Env,
+    user_addr_option: Option<Addr>,
+    return_asset_before: Asset,
+) -> StdResult<Response> {
+    // if a user address is passed in, we update the user's unlocked assets
+    // if not, we update the state's pending rewards
+    let mut state = State::default();
+    let mut position = Position::default();
+    let assets: &mut AssetList;
+    if let Some(user_addr) = &user_addr_option {
+        position = POSITION.load(deps.storage, user_addr).unwrap_or_default();
+        assets = &mut position.unlocked_assets;
+    } else {
+        state = STATE.load(deps.storage)?;
+        assets = &mut state.pending_rewards;
+    }
+
+    //Calculate how many assets were returned from the swap
+    let curr_balance =
+        return_asset_before.info.query_balance(&deps.querier, env.contract.address)?;
+    let returned_amount = curr_balance.checked_sub(return_asset_before.amount)?;
+    let returned_asset = Asset::new(return_asset_before.info, returned_amount);
+
+    assets.add(&returned_asset)?;
+
+    // save the updated state/position
+    if let Some(user_addr) = &user_addr_option {
+        POSITION.save(deps.storage, user_addr, &position)?;
     } else {
         STATE.save(deps.storage, &state)?;
     }
 
     Ok(Response::new()
-        .add_submessage(pair.swap_submsg(2, &offer_asset, None, max_spread)?)
-        .add_attribute("action", "martian_field/callback/swap")
-        .add_attribute("asset_offered", offer_asset.to_string()))
+        .add_attribute("action", "martian_field/reply/after_swap")
+        .add_attribute("returned_asset", returned_asset.to_string()))
 }
 
-pub fn balance(
-    deps: DepsMut,
-    _env: Env,
-    max_spread: Option<Decimal>,
-) -> StdResult<Response> {
+pub fn balance(deps: DepsMut, env: Env, max_spread: Option<Decimal>) -> StdResult<Response> {
     let config = CONFIG.load(deps.storage)?;
     let mut state = STATE.load(deps.storage)?;
 
@@ -402,13 +474,20 @@ pub fn balance(
     // if primary_asset_value > secondary_asset_value, we swap primary >> secondary
     // if secondary_asset_value > primary_asset_value, we swap secondary >> primary
     // if equal, we skip
-    let (offer_asset_info, offer_asset_available_amount) =
-        match primary_asset_value.cmp(&secondary_asset_value)
-    {
-        Ordering::Greater => (config.primary_asset_info.clone(), primary_asset_amount),
-        Ordering::Less => (config.secondary_asset_info.clone(), secondary_asset_amount),
-        Ordering::Equal => return Ok(Response::default()),
-    };
+    let (offer_asset_info, offer_asset_available_amount, return_asset_info) =
+        match primary_asset_value.cmp(&secondary_asset_value) {
+            Ordering::Greater => (
+                config.primary_asset_info.clone(),
+                primary_asset_amount,
+                config.secondary_asset_info.clone(),
+            ),
+            Ordering::Less => (
+                config.secondary_asset_info.clone(),
+                secondary_asset_amount,
+                config.primary_asset_info.clone(),
+            ),
+            Ordering::Equal => return Ok(Response::default()),
+        };
 
     // the amount to be swapped is the amount corresponding to half of the value difference
     //
@@ -431,7 +510,7 @@ pub fn balance(
 
     let offer_asset = Asset::new(
         offer_asset_info,
-        offer_asset_available_amount.multiply_ratio(value_to_swap, higher_value)
+        offer_asset_available_amount.multiply_ratio(value_to_swap, higher_value),
     );
 
     state.pending_rewards.deduct(&offer_asset)?;
@@ -441,12 +520,20 @@ pub fn balance(
     // if amount to swap is non-zero, we invoke the `Swap` callback
     let mut res = Response::new();
     if !offer_asset.amount.is_zero() {
-        res = res.add_submessage(config.primary_pair.swap_submsg(
-            2,
-            &offer_asset,
-            None,
-            max_spread,
-        )?);
+        res = res.add_message(config.primary_pair.swap_msg(&offer_asset, None, max_spread)?);
+
+        let return_asset_before = Asset::new(
+            config.secondary_asset_info.clone(),
+            return_asset_info.query_balance(&deps.querier, env.contract.address.clone())?,
+        );
+
+        res = res.add_message(
+            CallbackMsg::AfterSwap {
+                user_addr: None,
+                return_asset_before,
+            }
+            .into_cosmos_msg(&env.contract.address)?,
+        );
     }
 
     Ok(res
@@ -458,11 +545,7 @@ pub fn balance(
         .add_attribute("asset_offered", offer_asset.to_string()))
 }
 
-pub fn cover(
-    deps: DepsMut,
-    env: Env,
-    user_addr: Addr,
-) -> StdResult<Response> {
+pub fn cover(deps: DepsMut, env: Env, user_addr: Addr) -> StdResult<Response> {
     let config = CONFIG.load(deps.storage)?;
     let state = STATE.load(deps.storage)?;
     let mut position = POSITION.load(deps.storage, &user_addr).unwrap_or_default();
@@ -491,10 +574,8 @@ pub fn cover(
     let secondary_needed = Asset::new(config.secondary_asset_info.clone(), secondary_needed_amount);
 
     // reverse-simulate how much primary asset needs to be sold
-    let mut primary_sell_amount = config.primary_pair.query_reverse_simulate(
-        &deps.querier,
-        &secondary_needed
-    )?;
+    let mut primary_sell_amount =
+        config.primary_pair.query_reverse_simulate(&deps.querier, &secondary_needed)?;
 
     // NOTE: due to integer rounding, if we estimate offer amount using exactly the needed return
     // amount, the actual return amount may be one unit less than what we need
@@ -527,15 +608,24 @@ pub fn cover(
 
     position.unlocked_assets.deduct(&primary_to_sell)?;
     POSITION.save(deps.storage, &user_addr, &position)?;
-    CACHED_USER_ADDR.save(deps.storage, &user_addr)?;
+
+    let secondary_balance =
+        config.secondary_asset_info.query_balance(&deps.querier, env.contract.address.clone())?;
+    let return_asset_before = Asset::new(config.secondary_asset_info.clone(), secondary_balance);
 
     Ok(Response::new()
-        .add_submessage(config.primary_pair.swap_submsg(
-            2,
+        .add_message(config.primary_pair.swap_msg(
             &primary_to_sell,
             None,
             Some(Decimal::from_ratio(1u128, 20u128)), // 5%. NOTE: switch this to 50% to pass the integration test
         )?)
+        .add_message(
+            CallbackMsg::AfterSwap {
+                user_addr: Some(user_addr),
+                return_asset_before,
+            }
+            .into_cosmos_msg(&env.contract.address)?,
+        )
         .add_attribute("action", "martian_field/callback/cover")
         .add_attribute("debt_amount", debt_amount)
         .add_attribute("secondary_available", secondary_available.amount)
@@ -598,13 +688,11 @@ pub fn assert_health(deps: DepsMut, env: Env, user_addr: Addr) -> StdResult<Resp
 
     // Check minimum position size
     if health.bond_value < config.min_position_size {
-        return Err(StdError::generic_err(
-            format!("position size {} less that minimum size of {}",
-            health.bond_value,
-            config.min_position_size)
-        ));
+        return Err(StdError::generic_err(format!(
+            "position size {} less that minimum size of {}",
+            health.bond_value, config.min_position_size
+        )));
     }
-
 
     let event = Event::new("position_changed")
         .add_attribute("timestamp", env.block.time.seconds().to_string())
@@ -637,7 +725,8 @@ pub fn clear_bad_debt(deps: DepsMut, env: Env, user_addr: Addr) -> StdResult<Res
         &env.contract.address,
         &config.secondary_asset_info,
     )?;
-    let bad_debt_amount = total_debt_amount.multiply_ratio(position.debt_units, state.total_debt_units);
+    let bad_debt_amount =
+        total_debt_amount.multiply_ratio(position.debt_units, state.total_debt_units);
     let bad_debt = Asset::new(config.secondary_asset_info, bad_debt_amount);
 
     // waive the user's debt

@@ -1,13 +1,15 @@
 use std::str::FromStr;
 
-use cosmwasm_std::{to_binary, Addr, Api, CosmosMsg, Decimal, StdResult, Uint128, WasmMsg, StdError};
+use cosmwasm_std::{
+    to_binary, Addr, Api, CosmosMsg, Decimal, QuerierWrapper, StdError, StdResult, Uint128, WasmMsg,
+};
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use cw_asset::{AssetInfoBase, AssetListBase};
 
-use crate::adapters::{GeneratorBase, OracleBase, PairBase, RedBankBase};
+use crate::adapters::{GeneratorBase, OracleBase, PairBase, RedBankBase, RouterBase};
 
 const MIN_MAX_LTV: &str = "0.75";
 const MAX_MAX_LTV: &str = "0.9";
@@ -39,6 +41,13 @@ pub struct ConfigBase<T> {
     /// not assert this when instantiating the contract, so it is the deployer's responsibility to
     /// make sure of this.
     pub astro_token_info: AssetInfoBase<T>,
+    /// The proxy reward asset.
+    ///
+    /// This may be the same as the primary asset for example the ANC-UST pair,
+    /// giving ANC tokens as reward. It could also be another asset completely, such as the stLUNA-LUNA
+    /// pair, giving LDO tokens as reward. It may also be set to None, for those pairs that only receive
+    /// ASTRO token rewards.
+    pub proxy_reward_asset: Option<AssetInfoBase<T>>,
     /// Astroport pair consisting of the primary and secondary assets
     ///
     /// The liquidity token of this pair will be staked/bonded in Astro generator to earn ASTRO and
@@ -48,6 +57,16 @@ pub struct ConfigBase<T> {
     ///
     /// This pair is used for swapping ASTRO reward so that it can be reinvested.
     pub astro_pair: PairBase<T>,
+    /// Optional assets to hop between when swapping from ASTRO to secondary asset
+    ///
+    /// For example for the bLUNA-LUNA strategy, we need to swap ASTRO to UST to LUNA.
+    /// There, UST would be the bridge asset.
+    pub astro_bridge_assets: Vec<AssetInfoBase<T>>,
+    /// Optional assets to hop between when swapping from the proxy reward asset to secondary asset.
+    ///
+    /// For example for the ANC-UST strategy, we need to swap ANC to UST to LUNA.
+    /// There, UST would be the bridge asset.
+    pub proxy_reward_bridge_assets: Vec<AssetInfoBase<T>>,
     /// The Astro generator contract
     pub astro_generator: GeneratorBase<T>,
     /// The Mars Protocol money market contract. We borrow the secondary asset here
@@ -70,7 +89,11 @@ pub struct ConfigBase<T> {
     pub bonus_rate: Decimal,
     /// The minimum position size (defined as value of assets + value of debt) that must be respected
     /// when updating the user's position
-    pub min_position_size: Uint128
+    pub min_position_size: Uint128,
+    /// The Astroport router contract.
+    ///
+    /// Used for swapping when astro_bridge_assets or proxy_reward_bridge_assets is not None.
+    pub astro_router: RouterBase<T>,
 }
 
 pub type ConfigUnchecked = ConfigBase<String>;
@@ -82,8 +105,15 @@ impl From<Config> for ConfigUnchecked {
             primary_asset_info: config.primary_asset_info.into(),
             secondary_asset_info: config.secondary_asset_info.into(),
             astro_token_info: config.astro_token_info.into(),
+            proxy_reward_asset: config.proxy_reward_asset.map(|x| x.into()),
             primary_pair: config.primary_pair.into(),
             astro_pair: config.astro_pair.into(),
+            astro_bridge_assets: config.astro_bridge_assets.into_iter().map(|x| x.into()).collect(),
+            proxy_reward_bridge_assets: config
+                .proxy_reward_bridge_assets
+                .into_iter()
+                .map(|x| x.into())
+                .collect(),
             astro_generator: config.astro_generator.into(),
             red_bank: config.red_bank.into(),
             oracle: config.oracle.into(),
@@ -94,7 +124,8 @@ impl From<Config> for ConfigUnchecked {
             max_initial_ltv: config.max_initial_ltv,
             fee_rate: config.fee_rate,
             bonus_rate: config.bonus_rate,
-            min_position_size: config.min_position_size
+            min_position_size: config.min_position_size,
+            astro_router: config.astro_router.into(),
         }
     }
 }
@@ -105,44 +136,99 @@ impl ConfigUnchecked {
             primary_asset_info: self.primary_asset_info.check(api)?,
             secondary_asset_info: self.secondary_asset_info.check(api)?,
             astro_token_info: self.astro_token_info.check(api)?,
+            proxy_reward_asset: self
+                .proxy_reward_asset
+                .as_ref()
+                .map(|x| x.check(api))
+                .transpose()?,
             primary_pair: self.primary_pair.check(api)?,
             astro_pair: self.astro_pair.check(api)?,
+            astro_bridge_assets: self
+                .astro_bridge_assets
+                .iter()
+                .map(|x| x.check(api))
+                .collect::<StdResult<_>>()?,
+            proxy_reward_bridge_assets: self
+                .proxy_reward_bridge_assets
+                .iter()
+                .map(|x| x.check(api))
+                .collect::<StdResult<_>>()?,
             astro_generator: self.astro_generator.check(api)?,
             red_bank: self.red_bank.check(api)?,
             oracle: self.oracle.check(api)?,
             treasury: api.addr_validate(&self.treasury)?,
             governance: api.addr_validate(&self.governance)?,
-            operators: self.operators.iter().map(|op| api.addr_validate(op)).collect::<StdResult<Vec<Addr>>>()?,
+            operators: self
+                .operators
+                .iter()
+                .map(|op| api.addr_validate(op))
+                .collect::<StdResult<Vec<Addr>>>()?,
             max_ltv: self.max_ltv,
             max_initial_ltv: self.max_initial_ltv,
             fee_rate: self.fee_rate,
             bonus_rate: self.bonus_rate,
-            min_position_size: self.min_position_size
+            min_position_size: self.min_position_size,
+            astro_router: self.astro_router.check(api)?,
         })
     }
 }
 
 impl Config {
-    pub fn validate(&self) -> StdResult<()> {
+    pub fn validate(&self, querier: &QuerierWrapper) -> StdResult<()> {
         let min_max_ltv = Decimal::from_str(MIN_MAX_LTV)?;
         let max_max_ltv = Decimal::from_str(MAX_MAX_LTV)?;
         if self.max_ltv < min_max_ltv || self.max_ltv > max_max_ltv {
-            return Err(StdError::generic_err(
-                format!("invalid max ltv: {}; must be in [{}, {}]", self.max_ltv, MIN_MAX_LTV, MAX_MAX_LTV)
-            ));
+            return Err(StdError::generic_err(format!(
+                "invalid max ltv: {}; must be in [{}, {}]",
+                self.max_ltv, MIN_MAX_LTV, MAX_MAX_LTV
+            )));
         }
 
         let max_fee_rate = Decimal::from_str(MAX_FEE_RATE)?;
         if self.fee_rate > max_fee_rate {
-            return Err(StdError::generic_err(
-                format!("invalid fee rate: {}; must be <= {}", self.fee_rate, MAX_FEE_RATE)
-            ));
+            return Err(StdError::generic_err(format!(
+                "invalid fee rate: {}; must be <= {}",
+                self.fee_rate, MAX_FEE_RATE
+            )));
         }
 
         let max_bonus_rate = Decimal::from_str(MAX_BONUS_RATE)?;
         if self.bonus_rate > max_bonus_rate {
+            return Err(StdError::generic_err(format!(
+                "invalid bonus rate: {}; must be <= {}",
+                self.bonus_rate, MAX_BONUS_RATE
+            )));
+        }
+
+        // If we set proxy_reward_asset and it is not equal to primary asset,
+        // we must also set proxy_reward_bridge assets so that we can swap from
+        // proxy_reward to secondary asset.
+        if let Some(proxy_reward) = self.proxy_reward_asset.clone() {
+            if proxy_reward != self.primary_asset_info && self.proxy_reward_bridge_assets.is_empty()
+            {
+                return Err(StdError::generic_err(
+                    "Must set proxy_reward_bridge_assets if proxy_reward != primary_asset",
+                ));
+            }
+        }
+
+        //Astro_pair must contain astro_token
+        let assets = self.astro_pair.query_pair(querier)?.asset_infos;
+        let other_asset = if assets[0].equal(&self.astro_token_info.clone().into()) {
+            assets[1].clone()
+        } else if assets[1].equal(&self.astro_token_info.clone().into()) {
+            assets[0].clone()
+        } else {
+            return Err(StdError::generic_err("astro_pair must contain astro token!"));
+        };
+
+        // If the other asset in astro_pair is not the secondary asset, then we
+        // must set astro_bridge_assets so we can swap from astro to secondary.
+        if !other_asset.equal(&self.secondary_asset_info.clone().into())
+            && self.astro_bridge_assets.is_empty()
+        {
             return Err(StdError::generic_err(
-                format!("invalid bonus rate: {}; must be <= {}", self.bonus_rate, MAX_BONUS_RATE)
+                "Must supply astro_bridge_assets if astro_pair does not contain secondary asset",
             ));
         }
 
@@ -256,7 +342,7 @@ pub struct Snapshot {
 pub mod msg {
     use super::*;
     use cosmwasm_std::Empty;
-    use cw_asset::{AssetInfo, AssetUnchecked};
+    use cw_asset::{Asset, AssetInfo, AssetUnchecked};
 
     pub type InstantiateMsg = ConfigUnchecked;
 
@@ -394,6 +480,11 @@ pub mod msg {
             offer_asset_info: AssetInfo,
             offer_amount: Option<Uint128>,
             max_spread: Option<Decimal>,
+        },
+        /// Callback returned after performing any swap to record the difference in returned asset balance
+        AfterSwap {
+            user_addr: Option<Addr>,
+            return_asset_before: Asset,
         },
         /// Swap the primary and secondary assets currently held by the contract as pending rewards,
         /// such that the two assets have the same value and can be reinvested
