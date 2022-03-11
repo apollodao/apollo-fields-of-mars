@@ -456,6 +456,7 @@ dependencies = [
 name = "martian-field"
 version = "1.0.0"
 dependencies = [
+ "astroport 0.3.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "cosmwasm-std",
  "cw-asset",
  "cw-storage-plus 0.9.1",

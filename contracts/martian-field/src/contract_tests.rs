@@ -1,18 +1,18 @@
-use cosmwasm_std::testing::{
-    mock_dependencies, mock_env, mock_info, MockApi, MockQuerier, MockStorage,
-};
-use cosmwasm_std::{Addr, Coin, Decimal, OwnedDeps, StdError};
+use astroport::asset::PairInfo;
+use cosmwasm_std::testing::{mock_env, mock_info, MockApi};
+use cosmwasm_std::{Addr, Coin, Decimal, MemoryStorage, OwnedDeps, StdError, Uint128};
 
 use cw_asset::{Asset, AssetInfo};
 
-use fields_of_mars::adapters::{Generator, Oracle, Pair, RedBank};
+use fields_of_mars::adapters::{Generator, Oracle, Pair, RedBank, Router};
 use fields_of_mars::martian_field::msg::{Action, ExecuteMsg};
 use fields_of_mars::martian_field::Config;
 
 use crate::contract::{execute, instantiate};
+use crate::mock_querier::{mock_dependencies, WasmMockQuerier};
 
 /// Deploy the contract, returns the `deps` object
-fn setup_test() -> OwnedDeps<MockStorage, MockApi, MockQuerier> {
+fn setup_test() -> OwnedDeps<MemoryStorage, MockApi, WasmMockQuerier> {
     let mut deps = mock_dependencies(&[]);
 
     let config = Config {
@@ -43,7 +43,27 @@ fn setup_test() -> OwnedDeps<MockStorage, MockApi, MockQuerier> {
         max_initial_ltv: Decimal::from_ratio(75u128, 100u128),
         fee_rate: Decimal::from_ratio(5u128, 100u128),
         bonus_rate: Decimal::from_ratio(1u128, 100u128),
+        proxy_reward_asset: None,
+        astro_bridge_assets: vec![],
+        proxy_reward_bridge_assets: vec![],
+        min_position_size: Uint128::zero(),
+        astro_router: Router {
+            contract_addr: Addr::unchecked("astro_router"),
+        },
     };
+
+    deps.querier.with_astroport_pairs(&[(
+        &String::from("astro_uusd_pair"),
+        &PairInfo {
+            contract_addr: Addr::unchecked("astro_uusd_pair"),
+            liquidity_token: Addr::unchecked("astro_uusd_lp_token"),
+            asset_infos: [
+                config.astro_token_info.clone().into(),
+                config.secondary_asset_info.clone().into(),
+            ],
+            pair_type: astroport::factory::PairType::Xyk {},
+        },
+    )]);
 
     instantiate(deps.as_mut(), mock_env(), mock_info("deployer", &[]), config.into()).unwrap();
 
@@ -55,32 +75,32 @@ fn handling_native_deposits() {
     let mut deps = setup_test();
 
     // missing fund
-    let deposits = vec![Coin::new(12345, "uluna"), ];
+    let deposits = vec![Coin::new(12345, "uluna")];
     let msg = ExecuteMsg::UpdatePosition(vec![
         Action::Deposit(Asset::native("uluna", 12345u128).into()),
         Action::Deposit(Asset::native("uusd", 67890u128).into()),
     ]);
     let res = execute(deps.as_mut(), mock_env(), mock_info("alice", &deposits), msg);
-    assert_eq!(res, Err(StdError::generic_err("sent fund mismatch! expected: uusd:67890, received 0")));
+    assert_eq!(
+        res,
+        Err(StdError::generic_err("sent fund mismatch! expected: uusd:67890, received 0"))
+    );
 
     // fund amount mismatch
-    let deposits = vec![
-        Coin::new(12345, "uluna"),
-        Coin::new(69420, "uusd"),
-    ];
+    let deposits = vec![Coin::new(12345, "uluna"), Coin::new(69420, "uusd")];
     let msg = ExecuteMsg::UpdatePosition(vec![
         Action::Deposit(Asset::native("uluna", 12345u128).into()),
         Action::Deposit(Asset::native("uusd", 67890u128).into()),
     ]);
     let res = execute(deps.as_mut(), mock_env(), mock_info("alice", &deposits), msg);
-    assert_eq!(res, Err(StdError::generic_err("sent fund mismatch! expected: uusd:67890, received 69420")));
+    assert_eq!(
+        res,
+        Err(StdError::generic_err("sent fund mismatch! expected: uusd:67890, received 69420"))
+    );
 
     // extra fund
-    let deposits = vec![
-        Coin::new(12345, "uluna"),
-        Coin::new(69420, "uusd"),
-        Coin::new(88888, "uatom"),
-    ];
+    let deposits =
+        vec![Coin::new(12345, "uluna"), Coin::new(69420, "uusd"), Coin::new(88888, "uatom")];
     let msg = ExecuteMsg::UpdatePosition(vec![
         Action::Deposit(Asset::native("uluna", 12345u128).into()),
         Action::Deposit(Asset::native("uusd", 69420u128).into()),

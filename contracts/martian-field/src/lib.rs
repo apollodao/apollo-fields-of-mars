@@ -10,3 +10,6 @@ pub mod state;
 
 #[cfg(test)]
 mod contract_tests;
+
+#[cfg(test)]
+mod mock_querier;
