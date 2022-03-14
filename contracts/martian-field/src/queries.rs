@@ -110,7 +110,12 @@ pub fn query_tvl(deps: Deps, env: Env) -> StdResult<TvlResponse> {
     let pool_value = U256::from(2) * (primary_value * secondary_value).integer_sqrt();
 
     let pool_value_u128 = Uint128::new(pool_value.as_u128());
-    let total_bonded_value = pool_value_u128.multiply_ratio(total_bonded_amount, total_shares);
+
+    let total_bonded_value = if total_shares.is_zero() {
+        Uint128::zero()
+    } else {
+        pool_value_u128.multiply_ratio(total_bonded_amount, total_shares)
+    };
 
     Ok(TvlResponse {
         tvl: total_bonded_value,
