@@ -346,7 +346,10 @@ pub fn liquidate(
         // Need to call Apollo Factory UpdateUserRewards before share change!
         // We add it as a submessage instead of a regular message, so that in case
         // it fails, we can still liquidate the position.
-        .add_submessage(SubMsg::new(config.apollo_factory.update_rewards_msg(&user_addr)?))
+        .add_submessage(SubMsg::reply_on_error(
+            config.apollo_factory.update_rewards_msg(&user_addr)?,
+            3,
+        ))
         .add_messages(callback_msgs)
         .add_attribute("action", "martian_field/execute/liquidate")
         .add_event(event))
