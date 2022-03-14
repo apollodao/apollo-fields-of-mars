@@ -122,12 +122,16 @@ pub fn after_swap(deps: DepsMut, response: SubMsgExecutionResponse) -> StdResult
 pub fn failed_apollo_reward_update(
     result: ContractResult<SubMsgExecutionResponse>,
 ) -> StdResult<Response> {
-    if result.is_ok() {
-        //Should not happen.
-        Ok(Response::new().add_attribute("failed_apollo_reward_update", "response_ok"))
-    } else {
-        //Here we just log the error so that we know it happened and can manually refund the lost Apollo rewards.
-        let error_msg = result.unwrap_err();
-        Ok(Response::new().add_attribute("failed_apollo_reward_update", error_msg))
+    match result {
+        ContractResult::Ok(_) => {
+            // Should not happen, since we only add this submsg with reply_on_error.
+            // But let's handle the situation anyway in case code changes, etc.
+            Ok(Response::new().add_attribute("failed_apollo_reward_update", "response_ok"))
+        }
+        ContractResult::Err(error_msg) => {
+            // Here we just log the error so that we know it happened and can
+            // manually refund the lost Apollo rewards.
+            Ok(Response::new().add_attribute("failed_apollo_reward_update", error_msg))
+        }
     }
 }
