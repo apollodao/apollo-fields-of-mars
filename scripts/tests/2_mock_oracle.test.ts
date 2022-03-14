@@ -28,9 +28,22 @@ async function setupTest() {
   const { cw20CodeId, address } = await deployCw20Token(deployer);
   testToken = address;
 
+  const assetInfos = [
+    {
+      token: {
+        contract_addr: testToken,
+      },
+    },
+    {
+      native_token: {
+        denom: "uusd",
+      },
+    },
+  ];
+
   ({ astroportFactory } = await deployAstroportFactory(deployer, cw20CodeId));
 
-  ({ astroportPair } = await deployAstroportPair(deployer, astroportFactory, testToken));
+  ({ astroportPair } = await deployAstroportPair(deployer, astroportFactory, assetInfos));
 
   ({ oracle } = await deployOracle(deployer));
 

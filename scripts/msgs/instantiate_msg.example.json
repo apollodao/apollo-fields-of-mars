@@ -28,6 +28,7 @@
   "treasury": "terra1u4sk8992wz4c9p5c8ckffj4h8vh97hfeyw9x5n",
   "governance": "terra1w0acggjar67f7l4phnvqzeg0na0k5fcn9lv5zz",
   "max_ltv": "0.75",
+  "max_initial_ltv": "0.66",
   "fee_rate": "0.05",
   "bonus_rate": "0.05"
 }

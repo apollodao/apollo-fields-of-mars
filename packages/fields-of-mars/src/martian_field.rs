@@ -64,6 +64,8 @@ pub struct ConfigBase<T> {
     pub operators: Vec<T>,
     /// Maximum loan-to-value ratio (LTV) above which a user can be liquidated
     pub max_ltv: Decimal,
+    /// Maximum loan-to-value ratio (LTV) when updating a user's position
+    pub max_initial_ltv: Decimal,
     /// Percentage of profit to be charged as performance fee
     pub performance_fee: Decimal,
     /// During liquidation, percentage of the user's asset to be awared to the liquidator as bonus
@@ -74,6 +76,9 @@ pub struct ConfigBase<T> {
     /// The Apollo Factory contract.
     /// We need to call the UpdateUserRewards ExecuteMsg on it before every user share change.
     pub apollo_factory: ApolloFactoryBase<T>,
+    /// The minimum position size (defined as value of assets + value of debt) that must be respected
+    /// when updating the user's position
+    pub min_position_size: Uint128,
 }
 
 pub type ConfigUnchecked = ConfigBase<String>;
@@ -98,6 +103,8 @@ impl From<Config> for ConfigUnchecked {
             bonus_rate: config.bonus_rate,
             apr_query_adapter: config.apr_query_adapter.into(),
             apollo_factory: config.apollo_factory.into(),
+            max_initial_ltv: config.max_initial_ltv,
+            min_position_size: config.min_position_size,
         }
     }
 }
@@ -125,6 +132,8 @@ impl ConfigUnchecked {
             bonus_rate: self.bonus_rate,
             apr_query_adapter: api.addr_validate(&self.apr_query_adapter)?,
             apollo_factory: self.apollo_factory.check(api)?,
+            max_initial_ltv: self.max_initial_ltv,
+            min_position_size: self.min_position_size,
         })
     }
 }

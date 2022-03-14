@@ -1,7 +1,7 @@
 use cosmwasm_std::testing::{
     mock_dependencies, mock_env, mock_info, MockApi, MockQuerier, MockStorage,
 };
-use cosmwasm_std::{Addr, Coin, Decimal, OwnedDeps, StdError};
+use cosmwasm_std::{Addr, Coin, Decimal, OwnedDeps, StdError, Uint128};
 
 use cw_asset::{Asset, AssetInfo};
 
@@ -41,11 +41,13 @@ fn setup_test() -> OwnedDeps<MockStorage, MockApi, MockQuerier> {
         operators: vec![Addr::unchecked("operator")],
         max_ltv: Decimal::from_ratio(83u128, 100u128),
         performance_fee: Decimal::from_ratio(5u128, 100u128),
+        max_initial_ltv: Decimal::from_ratio(75u128, 100u128),
         bonus_rate: Decimal::from_ratio(1u128, 100u128),
         apr_query_adapter: Addr::unchecked("apr_query_adapter"),
         apollo_factory: ApolloFactory {
             contract_addr: Addr::unchecked("apollo_factory"),
         },
+        min_position_size: Uint128::zero(),
     };
 
     instantiate(deps.as_mut(), mock_env(), mock_info("deployer", &[]), config.into()).unwrap();
