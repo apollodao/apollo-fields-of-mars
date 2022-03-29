@@ -1,4 +1,4 @@
-use cosmwasm_std::{DepsMut, Response, StdResult, SubMsgExecutionResponse};
+use cosmwasm_std::{ContractResult, DepsMut, Response, StdResult, SubMsgExecutionResponse};
 
 use cw_asset::{Asset, AssetList};
 
@@ -117,4 +117,21 @@ pub fn after_swap(deps: DepsMut, response: SubMsgExecutionResponse) -> StdResult
     Ok(Response::new()
         .add_attribute("action", "martian_field/reply/after_swap")
         .add_attribute("returned_asset", returned_asset.to_string()))
+}
+
+pub fn failed_apollo_reward_update(
+    result: ContractResult<SubMsgExecutionResponse>,
+) -> StdResult<Response> {
+    match result {
+        ContractResult::Ok(_) => {
+            // Should not happen, since we only add this submsg with reply_on_error.
+            // But let's handle the situation anyway in case code changes, etc.
+            Ok(Response::new().add_attribute("failed_apollo_reward_update", "response_ok"))
+        }
+        ContractResult::Err(error_msg) => {
+            // Here we just log the error so that we know it happened and can
+            // manually refund the lost Apollo rewards.
+            Ok(Response::new().add_attribute("failed_apollo_reward_update", error_msg))
+        }
+    }
 }

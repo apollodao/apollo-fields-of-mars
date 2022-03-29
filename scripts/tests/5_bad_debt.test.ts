@@ -119,8 +119,8 @@ async function setupTest() {
     governance: deployer.key.accAddress,
     operators: [deployer.key.accAddress],
     max_ltv: "0.83",
+    performance_fee: "0",
     max_initial_ltv: "0.75",
-    fee_rate: "0",
     bonus_rate: "0.05",
   };
   ({ field } = await deployMartianField(deployer, config));

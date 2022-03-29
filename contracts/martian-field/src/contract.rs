@@ -11,7 +11,12 @@ use crate::helpers::unwrap_reply;
 use crate::{execute, execute_callbacks as callbacks, execute_replies as replies, queries};
 
 #[entry_point]
-pub fn instantiate(deps: DepsMut, _env: Env, _info: MessageInfo, msg: InstantiateMsg) -> StdResult<Response> {
+pub fn instantiate(
+    deps: DepsMut,
+    _env: Env,
+    _info: MessageInfo,
+    msg: InstantiateMsg,
+) -> StdResult<Response> {
     let config = msg.check(deps.api)?;
     config.validate()?;
     execute::init_storage(deps, config)
@@ -36,7 +41,12 @@ pub fn execute(deps: DepsMut, env: Env, info: MessageInfo, msg: ExecuteMsg) -> S
     }
 }
 
-fn execute_callback(deps: DepsMut, env: Env, info: MessageInfo, msg: CallbackMsg) -> StdResult<Response> {
+fn execute_callback(
+    deps: DepsMut,
+    env: Env,
+    info: MessageInfo,
+    msg: CallbackMsg,
+) -> StdResult<Response> {
     if info.sender != env.contract.address {
         return Err(StdError::generic_err("callbacks cannot be invoked externally"));
     }
@@ -98,6 +108,7 @@ pub fn reply(deps: DepsMut, _env: Env, reply: Reply) -> StdResult<Response> {
         0 => replies::after_provide_liquidity(deps, unwrap_reply(reply)?),
         1 => replies::after_withdraw_liquidity(deps, unwrap_reply(reply)?),
         2 => replies::after_swap(deps, unwrap_reply(reply)?),
+        3 => replies::failed_apollo_reward_update(reply.result),
         id => Err(StdError::generic_err(format!("invalid reply id: {}", id))),
     }
 }
@@ -116,6 +127,12 @@ pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> StdResult<Binary> {
         QueryMsg::Snapshot {
             user,
         } => to_binary(&queries::query_snapshot(deps, user)?),
+        QueryMsg::UserInfo {
+            address,
+        } => to_binary(&queries::query_user_info(deps, env, address)?),
+        QueryMsg::StrategyInfo {} => to_binary(&queries::query_strategy_info(deps, env)?),
+        QueryMsg::Tvl {} => to_binary(&queries::query_tvl(deps, env)?),
+        QueryMsg::Apr {} => to_binary(&queries::query_apr(deps)?),
     }
 }
 

@@ -1,13 +1,15 @@
 use std::str::FromStr;
 
-use cosmwasm_std::{to_binary, Addr, Api, CosmosMsg, Decimal, StdResult, Uint128, WasmMsg, StdError};
+use cosmwasm_std::{
+    to_binary, Addr, Api, CosmosMsg, Decimal, Decimal256, StdError, StdResult, Uint128, WasmMsg,
+};
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use cw_asset::{AssetInfoBase, AssetListBase};
 
-use crate::adapters::{GeneratorBase, OracleBase, PairBase, RedBankBase};
+use crate::adapters::{ApolloFactoryBase, GeneratorBase, OracleBase, PairBase, RedBankBase};
 
 const MIN_MAX_LTV: &str = "0.75";
 const MAX_MAX_LTV: &str = "0.9";
@@ -65,12 +67,18 @@ pub struct ConfigBase<T> {
     /// Maximum loan-to-value ratio (LTV) when updating a user's position
     pub max_initial_ltv: Decimal,
     /// Percentage of profit to be charged as performance fee
-    pub fee_rate: Decimal,
+    pub performance_fee: Decimal,
     /// During liquidation, percentage of the user's asset to be awared to the liquidator as bonus
     pub bonus_rate: Decimal,
+    /// In order to receive Apollo Rewards, we must provide an APR QueryMsg.
+    /// Here we outsource this to the contract address provided below.
+    pub apr_query_adapter: T,
+    /// The Apollo Factory contract.
+    /// We need to call the UpdateUserRewards ExecuteMsg on it before every user share change.
+    pub apollo_factory: ApolloFactoryBase<T>,
     /// The minimum position size (defined as value of assets + value of debt) that must be respected
     /// when updating the user's position
-    pub min_position_size: Uint128
+    pub min_position_size: Uint128,
 }
 
 pub type ConfigUnchecked = ConfigBase<String>;
@@ -91,10 +99,12 @@ impl From<Config> for ConfigUnchecked {
             governance: config.governance.into(),
             operators: config.operators.iter().map(|op| op.to_string()).collect(),
             max_ltv: config.max_ltv,
-            max_initial_ltv: config.max_initial_ltv,
-            fee_rate: config.fee_rate,
+            performance_fee: config.performance_fee,
             bonus_rate: config.bonus_rate,
-            min_position_size: config.min_position_size
+            apr_query_adapter: config.apr_query_adapter.into(),
+            apollo_factory: config.apollo_factory.into(),
+            max_initial_ltv: config.max_initial_ltv,
+            min_position_size: config.min_position_size,
         }
     }
 }
@@ -112,12 +122,18 @@ impl ConfigUnchecked {
             oracle: self.oracle.check(api)?,
             treasury: api.addr_validate(&self.treasury)?,
             governance: api.addr_validate(&self.governance)?,
-            operators: self.operators.iter().map(|op| api.addr_validate(op)).collect::<StdResult<Vec<Addr>>>()?,
+            operators: self
+                .operators
+                .iter()
+                .map(|op| api.addr_validate(op))
+                .collect::<StdResult<Vec<Addr>>>()?,
             max_ltv: self.max_ltv,
-            max_initial_ltv: self.max_initial_ltv,
-            fee_rate: self.fee_rate,
+            performance_fee: self.performance_fee,
             bonus_rate: self.bonus_rate,
-            min_position_size: self.min_position_size
+            apr_query_adapter: api.addr_validate(&self.apr_query_adapter)?,
+            apollo_factory: self.apollo_factory.check(api)?,
+            max_initial_ltv: self.max_initial_ltv,
+            min_position_size: self.min_position_size,
         })
     }
 }
@@ -127,23 +143,26 @@ impl Config {
         let min_max_ltv = Decimal::from_str(MIN_MAX_LTV)?;
         let max_max_ltv = Decimal::from_str(MAX_MAX_LTV)?;
         if self.max_ltv < min_max_ltv || self.max_ltv > max_max_ltv {
-            return Err(StdError::generic_err(
-                format!("invalid max ltv: {}; must be in [{}, {}]", self.max_ltv, MIN_MAX_LTV, MAX_MAX_LTV)
-            ));
+            return Err(StdError::generic_err(format!(
+                "invalid max ltv: {}; must be in [{}, {}]",
+                self.max_ltv, MIN_MAX_LTV, MAX_MAX_LTV
+            )));
         }
 
         let max_fee_rate = Decimal::from_str(MAX_FEE_RATE)?;
-        if self.fee_rate > max_fee_rate {
-            return Err(StdError::generic_err(
-                format!("invalid fee rate: {}; must be <= {}", self.fee_rate, MAX_FEE_RATE)
-            ));
+        if self.performance_fee > max_fee_rate {
+            return Err(StdError::generic_err(format!(
+                "invalid fee rate: {}; must be <= {}",
+                self.performance_fee, MAX_FEE_RATE
+            )));
         }
 
         let max_bonus_rate = Decimal::from_str(MAX_BONUS_RATE)?;
         if self.bonus_rate > max_bonus_rate {
-            return Err(StdError::generic_err(
-                format!("invalid bonus rate: {}; must be <= {}", self.bonus_rate, MAX_BONUS_RATE)
-            ));
+            return Err(StdError::generic_err(format!(
+                "invalid bonus rate: {}; must be <= {}",
+                self.bonus_rate, MAX_BONUS_RATE
+            )));
         }
 
         Ok(())
@@ -186,6 +205,16 @@ impl From<State> for StateUnchecked {
             pending_rewards: state.pending_rewards.into(),
         }
     }
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+#[schemars(deny_unknown_fields)]
+/// Returned by the StrategyInfo QueryMsg that we need to implement for Apollo Rewards support.
+pub struct StrategyInfoResponse {
+    /// The total number lp shares in the strategy
+    pub total_bond_amount: Uint128,
+    /// Same as state.total_bond_units
+    pub total_shares: Uint128,
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -236,6 +265,16 @@ pub struct Health {
     pub ltv: Option<Decimal>,
 }
 
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+#[schemars(deny_unknown_fields)]
+/// Returned by the UserInfo QueryMsg that we need to implement for Apollo Rewards support.
+pub struct UserInfoResponse {
+    /// The number of shares the user has. This is the same as the user's bond_units.
+    pub shares: Uint128,
+    /// The number of lp shares the user's bond_units represents
+    pub base_token_balance: Uint128,
+}
+
 /// Every time the user invokes `update_position`, we record a snaphot of the position
 ///
 /// This snapshot does have any impact on the contract's normal functioning. Rather it is used by
@@ -247,6 +286,18 @@ pub struct Snapshot {
     pub height: u64,
     pub position: PositionUnchecked,
     pub health: Health,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+/// Returned by the Tvl QueryMsg that we need to implement for Apollo Rewards support.
+pub struct TvlResponse {
+    pub tvl: Uint128,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+/// Returned by the Apr QueryMsg that we need to implement for Apollo Rewards support.
+pub struct AprResponse {
+    pub apr: Decimal256,
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -473,6 +524,16 @@ pub mod msg {
         Snapshot {
             user: String,
         },
+        /// Query a users shares (used by Apollo Factory)
+        UserInfo {
+            address: String,
+        },
+        /// Query the total bond amount and total shares (used by Apollo Factory)
+        StrategyInfo {},
+        /// Query the TVL in the strategy (used by Apollo Factory)
+        Tvl {},
+        /// Query the APR of the strategy when not using any leverage (used by Apollo Factory)
+        Apr {},
     }
 
     /// We currently don't need any input parameter for migration

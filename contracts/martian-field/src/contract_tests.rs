@@ -1,11 +1,11 @@
 use cosmwasm_std::testing::{
     mock_dependencies, mock_env, mock_info, MockApi, MockQuerier, MockStorage,
 };
-use cosmwasm_std::{Addr, Coin, Decimal, OwnedDeps, StdError};
+use cosmwasm_std::{Addr, Coin, Decimal, OwnedDeps, StdError, Uint128};
 
 use cw_asset::{Asset, AssetInfo};
 
-use fields_of_mars::adapters::{Generator, Oracle, Pair, RedBank};
+use fields_of_mars::adapters::{ApolloFactory, Generator, Oracle, Pair, RedBank};
 use fields_of_mars::martian_field::msg::{Action, ExecuteMsg};
 use fields_of_mars::martian_field::Config;
 
@@ -40,9 +40,14 @@ fn setup_test() -> OwnedDeps<MockStorage, MockApi, MockQuerier> {
         governance: Addr::unchecked("governance"),
         operators: vec![Addr::unchecked("operator")],
         max_ltv: Decimal::from_ratio(83u128, 100u128),
+        performance_fee: Decimal::from_ratio(5u128, 100u128),
         max_initial_ltv: Decimal::from_ratio(75u128, 100u128),
-        fee_rate: Decimal::from_ratio(5u128, 100u128),
         bonus_rate: Decimal::from_ratio(1u128, 100u128),
+        apr_query_adapter: Addr::unchecked("apr_query_adapter"),
+        apollo_factory: ApolloFactory {
+            contract_addr: Addr::unchecked("apollo_factory"),
+        },
+        min_position_size: Uint128::zero(),
     };
 
     instantiate(deps.as_mut(), mock_env(), mock_info("deployer", &[]), config.into()).unwrap();
@@ -55,32 +60,32 @@ fn handling_native_deposits() {
     let mut deps = setup_test();
 
     // missing fund
-    let deposits = vec![Coin::new(12345, "uluna"), ];
+    let deposits = vec![Coin::new(12345, "uluna")];
     let msg = ExecuteMsg::UpdatePosition(vec![
         Action::Deposit(Asset::native("uluna", 12345u128).into()),
         Action::Deposit(Asset::native("uusd", 67890u128).into()),
     ]);
     let res = execute(deps.as_mut(), mock_env(), mock_info("alice", &deposits), msg);
-    assert_eq!(res, Err(StdError::generic_err("sent fund mismatch! expected: uusd:67890, received 0")));
+    assert_eq!(
+        res,
+        Err(StdError::generic_err("sent fund mismatch! expected: uusd:67890, received 0"))
+    );
 
     // fund amount mismatch
-    let deposits = vec![
-        Coin::new(12345, "uluna"),
-        Coin::new(69420, "uusd"),
-    ];
+    let deposits = vec![Coin::new(12345, "uluna"), Coin::new(69420, "uusd")];
     let msg = ExecuteMsg::UpdatePosition(vec![
         Action::Deposit(Asset::native("uluna", 12345u128).into()),
         Action::Deposit(Asset::native("uusd", 67890u128).into()),
     ]);
     let res = execute(deps.as_mut(), mock_env(), mock_info("alice", &deposits), msg);
-    assert_eq!(res, Err(StdError::generic_err("sent fund mismatch! expected: uusd:67890, received 69420")));
+    assert_eq!(
+        res,
+        Err(StdError::generic_err("sent fund mismatch! expected: uusd:67890, received 69420"))
+    );
 
     // extra fund
-    let deposits = vec![
-        Coin::new(12345, "uluna"),
-        Coin::new(69420, "uusd"),
-        Coin::new(88888, "uatom"),
-    ];
+    let deposits =
+        vec![Coin::new(12345, "uluna"), Coin::new(69420, "uusd"), Coin::new(88888, "uatom")];
     let msg = ExecuteMsg::UpdatePosition(vec![
         Action::Deposit(Asset::native("uluna", 12345u128).into()),
         Action::Deposit(Asset::native("uusd", 69420u128).into()),
