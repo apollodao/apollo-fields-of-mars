@@ -50,20 +50,28 @@ export async function sendTransaction(signer: Wallet, msgs: Msg[]) {
  * @notice Same with `sendTransaction`, but requires confirmation for CLI before broadcasting
  */
 export async function sendTxWithConfirm(signer: Wallet, msgs: Msg[]) {
-  const tx = await signer.createAndSignTx({ msgs, ...DEFAULT_GAS_SETTINGS });
-  console.log("\n" + JSON.stringify(tx).replace(/\\/g, "") + "\n");
+  try {
+    const tx = await signer.createAndSignTx({ msgs, ...DEFAULT_GAS_SETTINGS });
+    console.log("\n" + JSON.stringify(tx).replace(/\\/g, "") + "\n");
 
-  const proceed = await promptly.confirm("Confirm transaction before broadcasting [y/N]:");
-  if (!proceed) {
-    console.log("User aborted!");
-    process.exit(1);
-  }
+    const proceed = await promptly.confirm("Confirm transaction before broadcasting [y/N]:");
+    if (!proceed) {
+      console.log("User aborted!");
+      process.exit(1);
+    }
 
-  const result = await signer.lcd.tx.broadcast(tx);
-  if (isTxError(result)) {
-    throw new Error(`tx failed! raw log: ${result.raw_log}`);
+    const result = await signer.lcd.tx.broadcast(tx);
+    if (isTxError(result)) {
+      throw new Error(`tx failed! raw log: ${result.raw_log}`);
+    }
+    return result;
+  } catch (error: any) {
+    let errorMsg;
+    if (isAxiosError(error)) {
+      errorMsg = error.response?.data.error || error.response?.data.message || "";
+    } else errorMsg = error.message;
+    throw new Error(errorMsg);
   }
-  return result;
 }
 
 /**
