@@ -34,3 +34,6 @@ artifacts/
 scripts/msgs/*.json
 
 packages/mars-core
+
+# contract schemas
+contracts/martian-field/schema
