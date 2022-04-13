@@ -2,8 +2,8 @@ use fields_of_mars::martian_field::msg::{
     Action, CallbackMsg, ExecuteMsg, InstantiateMsg, MigrateMsg, QueryMsg,
 };
 use fields_of_mars::martian_field::{
-    AprResponse, ConfigUnchecked, Health, PositionUnchecked, Snapshot, State, StrategyInfoResponse,
-    TvlResponse, UserInfoResponse,
+    AprResponse, ConfigUnchecked, Health, PositionUnchecked, Snapshot, StateUnchecked,
+    StrategyInfoResponse, TvlResponse, UserInfoResponse,
 };
 use std::env::current_dir;
 use std::fs::create_dir_all;
@@ -26,7 +26,7 @@ fn main() {
     export_schema(&schema_for!(Health), &out_dir);
     export_schema(&schema_for!(PositionUnchecked), &out_dir);
     export_schema(&schema_for!(Snapshot), &out_dir);
-    export_schema(&schema_for!(State), &out_dir);
+    export_schema(&schema_for!(StateUnchecked), &out_dir);
     export_schema(&schema_for!(StrategyInfoResponse), &out_dir);
     export_schema(&schema_for!(UserInfoResponse), &out_dir);
     export_schema(&schema_for!(AprResponse), &out_dir);
