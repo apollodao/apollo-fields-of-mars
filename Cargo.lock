@@ -87,6 +87,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "cosmwasm-schema"
+version = "0.16.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b021bdefb9d855c5135e83046e5407a9fddba869e42e78b6036b53a606dc8c10"
+dependencies = [
+ "schemars",
+ "serde_json",
+]
+
+[[package]]
 name = "cosmwasm-std"
 version = "0.16.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -456,6 +466,7 @@ dependencies = [
 name = "martian-field"
 version = "1.0.0"
 dependencies = [
+ "cosmwasm-schema",
  "cosmwasm-std",
  "cw-asset",
  "cw-storage-plus 0.9.1",
