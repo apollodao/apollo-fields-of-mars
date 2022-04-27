@@ -1,7 +1,7 @@
 [package]
 name = "martian-field"
 version = "1.0.0"
-authors = ["larry_0x <larry@delphidigital.io>"]
+authors = ["larry_0x <larry@delphidigital.io>", "Sturdy <study@apollo.farm>"]
 edition = "2018"
 license = "GPL-3.0-or-later"
 repository = "https://github.com/mars-protocol/field-of-mars"
