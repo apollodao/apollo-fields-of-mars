@@ -11,9 +11,9 @@ use cw_asset::{AssetInfoBase, AssetListBase};
 
 use crate::adapters::{ApolloFactoryBase, GeneratorBase, OracleBase, PairBase, RedBankBase};
 
-const MIN_MAX_LTV: &str = "0.75";
-const MAX_MAX_LTV: &str = "0.9";
-const MAX_FEE_RATE: &str = "0.2";
+const MIN_MAX_LTV: &str = "0.1";
+const MAX_MAX_LTV: &str = "0.95";
+const MAX_FEE_RATE: &str = "1";
 const MAX_BONUS_RATE: &str = "0.1";
 
 //--------------------------------------------------------------------------------------------------
