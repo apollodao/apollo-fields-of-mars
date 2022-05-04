@@ -24,7 +24,7 @@ pub fn compute_value_per_lp_token(
     config: &Config,
     primary_price: Option<Decimal>,
     secondary_price: Option<Decimal>,
-) -> StdResult<Uint128> {
+) -> StdResult<Decimal> {
     let (primary_depth, secondary_depth, total_shares) = config.primary_pair.query_pool(
         querier,
         &config.primary_asset_info,
@@ -52,9 +52,9 @@ pub fn compute_value_per_lp_token(
     let pool_value_u128 = Uint128::new(pool_value.as_u128());
 
     let lp_value = if total_shares.is_zero() {
-        Uint128::zero()
+        Decimal::zero()
     } else {
-        pool_value_u128 / total_shares
+        Decimal::from_ratio(pool_value_u128, total_shares)
     };
 
     Ok(lp_value)
